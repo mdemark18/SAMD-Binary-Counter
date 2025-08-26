@@ -13,7 +13,7 @@
     <OutputFileExtension>.elf</OutputFileExtension>
     <OutputDirectory>$(MSBuildProjectDirectory)\$(Configuration)</OutputDirectory>
     <AssemblyName>I'm so lost</AssemblyName>
-    <Name>I'm so lost</Name>
+    <Name>SAMD Binary Counter</Name>
     <RootNamespace>I'm so lost</RootNamespace>
     <ToolchainFlavour>Native</ToolchainFlavour>
     <KeepTimersRunning>true</KeepTimersRunning>
