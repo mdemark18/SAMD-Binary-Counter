@@ -168,12 +168,12 @@ void usb_init(void)
 	cdc_device_acm_init();
 }
 
-void usb_serial_begin (void)
+void usb_serial_begin(void)
 {
-	while (!cdcdf_acm_is_enabled()) {
-		// wait cdc acm to be installed
-	};
+	// Initialize USB device and attach, but DO NOT wait for host
+	cdc_device_acm_init();
 
+	// Register for line-state (DTR) change; this sets cdc_connected later
 	cdcdf_acm_register_callback(CDCDF_ACM_CB_STATE_C, (FUNC_PTR)usb_device_state_changed_handler);
 }
 

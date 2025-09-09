@@ -53,7 +53,7 @@ int main(void)
 	{
 		// Checks if a terminal has been connected
 		if (cdc_connected && !didSplash) {
-			count = 1023;
+			count = 1024;
 			gpio_set_port_level(GPIO_PORTA, 1023, 1);
 			serial_boot_message();
 			count = 0;
@@ -64,7 +64,7 @@ int main(void)
 		else if (!cdc_connected && didSplash) {
 			didSplash = false;	
 			counting = true;    // We keep counting from 0 once we disconnect
-			count = 1023;		// Another visual check
+			count = 1024;		// Another visual check
 			gpio_set_port_level(GPIO_PORTA, 1023, 1);
 		}
 
