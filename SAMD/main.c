@@ -32,6 +32,8 @@ bool counting = true;       // User controlled START and STOP
 uint8_t buttonHold = 0;		
 uint8_t clickTime = 0;
 bool clicked = false;		// Has the button been pressed?
+extern volatile bool user_typing;
+extern volatile uint32_t typing_timeout;
 
  //Tracks last value sent over USB
 uint32_t last_sent_count = 0xFFFFFFFF;
@@ -51,6 +53,16 @@ int main(void)
 
 	while (1)
 	{
+		
+		if (user_typing) {
+			if (typing_timeout > 0) {
+				typing_timeout--;
+				} else {
+				user_typing = false;
+			}
+		}
+		
+		
 		// Checks if a terminal has been connected
 		if (cdc_connected && !didSplash) {
 			count = 1024;
@@ -125,7 +137,7 @@ int main(void)
 		}
 
 		/* ------ COUNTER UPDATE (will run on COUNT under USB) ------ */
-		if (counting) {
+		if (counting && !user_typing) {
 			if (countUp) count++;
 			else count--;
 			count %= 1024;

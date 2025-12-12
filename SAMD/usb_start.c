@@ -46,6 +46,8 @@ static uint32_t input_length = 0;
 volatile bool pending_read = false;
 volatile bool pending_write = false;
 volatile bool cdc_connected = false;
+volatile bool user_typing = false;
+volatile uint32_t typing_timeout = 0;
 
 static int32_t cdc_read_start()
 {
@@ -58,42 +60,47 @@ static int32_t cdc_read_start()
  */
 static bool cdc_read_finished(const uint8_t ep, const enum usb_xfer_code rc, const uint32_t count)
 {
-    bool result = false;
+	bool result = false;
 
-    if (rc == USB_XFER_DONE)
-    {
-        pending_read = false;
-        uint8_t input_buffer_bytes_remaining = (uint8_t) (USBD_CDC_BUFFER_SIZE - input_length);
+	if (rc == USB_XFER_DONE)
+	{
+		/* --- Only mark typing if we actually got bytes --- */
+		if (count > 0) {
+			user_typing = true;
+			typing_timeout = 20;   // pause ? 5 * delay_ms(speed). Adjust as needed.
+		}
 
-        volatile hal_atomic_t flags;
-        atomic_enter_critical(&flags);
+		pending_read = false;
+		int input_buffer_bytes_remaining = (int) (USBD_CDC_BUFFER_SIZE - input_length);
 
-        if (count <= input_buffer_bytes_remaining)
-        {
-            for (uint16_t i = 0; i < count; i++)
-            {
-                uint8_t c = usbd_cdc_buffer[i];
-                input_buffer[input_length] = c;
-                input_length++;
-                if (input_length == USBD_CDC_BUFFER_SIZE)
-                {
-                    break;
-                }
-            }
-        }
-        else
-        {
-            result = true;
-        }
+		volatile hal_atomic_t flags;
+		atomic_enter_critical(&flags);
 
-        memset(usbd_cdc_buffer, 0, USBD_CDC_BUFFER_SIZE);
+		if (count <= input_buffer_bytes_remaining)
+		{
+			for (uint16_t i = 0; i < count; i++)
+			{
+				uint8_t c = usbd_cdc_buffer[i];
+				input_buffer[input_length] = c;
+				input_length++;
+				if (input_length == USBD_CDC_BUFFER_SIZE)
+				{
+					break;
+				}
+			}
+		}
+		else
+		{
+			result = true;
+		}
 
-        atomic_leave_critical(&flags);
+		memset(usbd_cdc_buffer, 0, USBD_CDC_BUFFER_SIZE);
 
-        cdc_read_start();
-    }
+		atomic_leave_critical(&flags);
 
-	/* No error. */
+		cdc_read_start();
+	}
+
 	return result;
 }
 
@@ -263,12 +270,15 @@ void serial_boot_message()
 	usb_serial_write("Type 'help' for command info.\r\n", 32);
 }
 
+
 // Command interpreter
 void handle_usb_command(char *cmd)
 {
-	bool counting = true;       // User controlled START and STOP
-	uint32_t count = 1023;		// Sets count to 1023 whenever it starts, visual confirmation that the lights are working
-	uint32_t speed = 200;		// Counter speed (ms)
+	extern bool counting;
+	extern uint32_t count;
+	extern uint32_t speed;
+
+	
 	for (int i = 0; cmd[i]; i++) {
 		cmd[i] = toupper((unsigned char)cmd[i]);	// Case insensitivity for given inputs
 	}
