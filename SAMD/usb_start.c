@@ -258,7 +258,7 @@ void serial_boot_message()
 	usb_serial_write(" ||     ||     ||     ||      ||       ||  ||  \r\n", 50);
 	usb_serial_write(".||     ||.   .||.   .||....| `|....' .||  ||. \r\n", 50);
 
-	usb_serial_write("\r\nMontana Tech Electrical Engineering Binary Counter\r\n", 51);
+	usb_serial_write("\r\nMontana Tech Electrical Engineering Binary Counter\r\n", 52);
 	delay_ms(800);
 
 	usb_serial_write("\r\nCPU: ATSAMD21E15B\r\n", 21);
@@ -328,15 +328,17 @@ void handle_usb_command(char *cmd)
 		}
 	}
 	else if (strcmp(cmd, "HELP") == 0) {			// HELP screen to give users info on commands (ASCII art for everyone) 
-		usb_serial_write("\r\n", 2);
-		usb_serial_write(" __  __  ____    __       ____    \r\n", 36);
-		usb_serial_write("/\ \/\ \/\  _`\ /\ \     /\  _`\  \r\n", 36);
-		usb_serial_write("\ \ \_\ \ \ \L\_\ \ \    \ \ \L\ \\r\n", 36);
-		usb_serial_write(" \ \  _  \ \  _\L\ \ \  __\ \ ,__/\r\n", 36);
-		usb_serial_write("  \ \ \ \ \ \ \L\ \ \ \L\ \\ \ \/ \r\n", 36);
-		usb_serial_write("   \ \_\ \_\ \____/\ \____/ \ \_\ \r\n", 36);
-		usb_serial_write("    \/_/\/_/\/___/  \/___/   \/_/ \r\n", 36);
-		usb_serial_write("\r\nCommands:\r\n", 14);
+		usb_serial_write("\r\n\n\n", 4);
+		usb_serial_write("*******************************************\r\n", 45);
+		usb_serial_write(" __   __  _______  ___      _______ \r\n", 38);
+		usb_serial_write("|  | |  ||       ||   |    |       |\r\n", 38);
+		usb_serial_write("|  |_|  ||    ___||   |    |    _  |\r\n", 38);
+		usb_serial_write("|       ||   |___ |   |    |   |_| |\r\n", 38);
+		usb_serial_write("|       ||    ___||   |___ |    ___|\r\n", 38);
+		usb_serial_write("|   _   ||   |___ |       ||   |    \r\n", 38);
+		usb_serial_write("|__| |__||_______||_______||___|    \r\n", 38);
+		usb_serial_write("*******************************************\r\n\n\n", 47);
+		usb_serial_write("Commands:\r\n", 11);
 		usb_serial_write("SET - Sets the counter to a given value < 1024 (decimal or hex).\r\n", 66);
 		usb_serial_write("START/COUNT - Starts the counter.\r\n", 35);
 		usb_serial_write("STOP - Stops the counter.\r\n", 27);
