@@ -48,6 +48,9 @@ volatile bool pending_write = false;
 volatile bool cdc_connected = false;
 volatile bool user_typing = false;
 volatile uint32_t typing_timeout = 0;
+bool debug_mode = false;   // set when DEBUG command is received
+uint8_t debug_step = 0;    // tracks which LED to light
+uint32_t debug_timer = 0;  // simple time counter
 
 static int32_t cdc_read_start()
 {
@@ -310,6 +313,14 @@ void handle_usb_command(char *cmd)
 			usb_serial_write("ERR\r\n", 5);
 		}
 	}
+	else if (strcmp(cmd, "DEBUG") == 0) {
+		debug_mode = true;
+		debug_step = 0;
+		debug_timer = 0;
+		counting = false;  // pause normal counting
+		usb_serial_write("OK\r\n", 4);
+	}
+
 	else if (strncmp(cmd, "SPEED ", 6) == 0) {		// Allows the user to change the speed of the counting
 		char *valstr = &cmd[6];
 		uint32_t val = 0;

@@ -1,15 +1,7 @@
 /*
 File:			main.c
-Author:			Miller DeMark, built off Ethan Schlepp's version
-Description:	This file runs our binary counter on the ARM processor. It runs a counter from the moment
-				power is given to the board, then resets the counter and pauses it once the counter is 
-				connected to a UART Terminal, i.e. PuTTy or TeraTerm. From there, the user can enter 
-				commands to control the controller. 
-				-STOP = stops counting
-				-COUNT = starts counting from the value the board is at
-				-SET = sets a value that the user defines
-				-SPEED = changes how fast the counter counts, defaults to 200ms
-				-HELP = gives a list of commands for the user
+Author:			Miller DeMark
+Description:	Binary counter for ATSAMD21E15B with USB commands and debug LED sequence
 */
 
 #include "atmel_start.h"
@@ -24,67 +16,75 @@ Description:	This file runs our binary counter on the ARM processor. It runs a c
 char usb_cmd_buffer[CMD_BUFFER_SIZE];
 uint8_t usb_cmd_index = 0;
 
-// Variable declarations 
-uint32_t count = 1023;		// Sets count to 1023 whenever it starts, visual confirmation that the lights are working
+// Counter variables
+uint32_t count = 1023;		// Initial count
 uint32_t speed = 200;		// Counter speed (ms)
-bool countUp = true;		// Sets if we are counting or not
-bool counting = true;       // User controlled START and STOP
-uint8_t buttonHold = 0;		
+bool countUp = true;
+bool counting = true;
+uint8_t buttonHold = 0;
 uint8_t clickTime = 0;
-bool clicked = false;		// Has the button been pressed?
-extern volatile bool user_typing;
-extern volatile uint32_t typing_timeout;
+bool clicked = false;
 
- //Tracks last value sent over USB
+// DEBUG sequence variables
+extern bool debug_mode;
+extern uint8_t debug_step;
+extern uint32_t debug_timer;
+
+// Tracks last value sent over USB
 uint32_t last_sent_count = 0xFFFFFFFF;
 
-extern volatile bool cdc_connected;	// Checks if a USB terminal is connected or not
+extern volatile bool user_typing;
+extern volatile uint32_t typing_timeout;
+extern volatile bool cdc_connected;
 
+// LED patterns for DEBUG (matches 10-bit PORTA LEDs)
+const uint16_t debug_leds[] = {
+	1023, // all LEDs ON
+	0x001, 0x002, 0x004, 0x008,
+	0x010, 0x020, 0x040, 0x080,
+	0x100, 0x200, 0x400
+};
+#define DEBUG_STEPS (sizeof(debug_leds)/sizeof(debug_leds[0]))
 
 int main(void)
 {
 	atmel_start_init();
 	usb_serial_begin();
 
-	gpio_set_port_level(GPIO_PORTA, 1023, 1);	// Sends 1023 to the counter to light up all bars for a visual confirmation
-	delay_ms(2000);								// Give it a couple seconds
+	// Initial LED splash
+	gpio_set_port_level(GPIO_PORTA, 1023, 1);
+	delay_ms(2000);
 
-	bool didSplash = false;						// Checking to see if the splash screen has been shown in USB
+	bool didSplash = false; // USB splash screen flag
 
 	while (1)
 	{
-		
+		// Handle typing timeout
 		if (user_typing) {
-			if (typing_timeout > 0) {
-				typing_timeout--;
-				} else {
-				user_typing = false;
-			}
+			if (typing_timeout > 0) typing_timeout--;
+			else user_typing = false;
 		}
-		
-		
-		// Checks if a terminal has been connected
+
+		// USB connection detection
 		if (cdc_connected && !didSplash) {
 			count = 1024;
 			gpio_set_port_level(GPIO_PORTA, 1023, 1);
 			serial_boot_message();
 			count = 0;
-			counting = false;   // We stop counting and set the counter to 0 on connect
-			didSplash = true;	
+			counting = false;
+			didSplash = true;
 		}
-		// Checks disconnect on the terminal
 		else if (!cdc_connected && didSplash) {
-			didSplash = false;	
-			counting = true;    // We keep counting from 0 once we disconnect
-			count = 1024;		// Another visual check
+			didSplash = false;
+			counting = true;
+			count = 1024;
 			gpio_set_port_level(GPIO_PORTA, 1023, 1);
 		}
 
-		/* --- USB RX + echo + backspace support --- */
+		// USB RX + echo + backspace
 		if (cdc_connected) {
 			char ch;
-			while (usb_serial_read(&ch, 1) > 0)
-			{
+			while (usb_serial_read(&ch, 1) > 0) {
 				if (ch == '\r' || ch == '\n') {
 					usb_serial_write("\r\n", 2);
 					if (usb_cmd_index > 0) {
@@ -97,19 +97,57 @@ int main(void)
 				if (ch == 0x08 || ch == 0x7F) { // Backspace
 					if (usb_cmd_index > 0) {
 						usb_cmd_index--;
-						usb_serial_write("\b \b", 3); // flush immediately
+						usb_serial_write("\b \b", 3);
 					}
 					continue;
 				}
 				if (usb_cmd_index < CMD_BUFFER_SIZE - 1) {
 					usb_cmd_buffer[usb_cmd_index++] = ch;
-					usb_serial_write(&ch, 1); // flush immediately
+					usb_serial_write(&ch, 1);
 				}
 			}
 		}
 
+		// ---- DEBUG LED sequence ----
+		if (debug_mode) {
+			debug_timer += speed; // accumulate time
 
-		/* ------ Button-based manual control ------ */
+			if (debug_step < DEBUG_STEPS) {
+				count = debug_leds[debug_step];
+				if (debug_timer >= 500) { // 500ms per step
+					debug_step++;
+					debug_timer = 0;
+				}
+				} else {
+				// DEBUG done
+				debug_mode = false;
+				counting = true; // resume normal counter
+				count = 0;       // clear LEDs
+			}
+		}
+
+		// ---- Normal counter update (only if not in debug) ----
+		if (!debug_mode && counting && !user_typing) {
+			if (countUp) count++;
+			else count--;
+			count %= 1024;
+		}
+
+		// ---- LED Update ----
+		gpio_set_port_level(GPIO_PORTA, 1023, 0);
+		gpio_set_port_level(GPIO_PORTA, count & 1023, 1);
+
+		// ---- USB streaming output ----
+		if (cdc_connected && didSplash) {
+			if (count != last_sent_count) {
+				char msg[32];
+				sprintf(msg, "COUNT: %lu\r\n", (unsigned long)count);
+				usb_serial_write(msg, strlen(msg));
+				last_sent_count = count;
+			}
+		}
+
+		// ---- Button control ----
 		if(!gpio_get_pin_level(PA16) && buttonHold < 255){
 			buttonHold++;
 			for (volatile uint32_t i = 0; i < 600000; i++);
@@ -123,9 +161,8 @@ int main(void)
 					gpio_set_port_level(GPIO_PORTA, 1023, 1);
 					counting = true;
 					countUp = true;
-				}
-				else clicked = true;
-			} else {
+				} else clicked = true;
+				} else {
 				countUp ^= true;
 				counting = true;
 			}
@@ -134,27 +171,6 @@ int main(void)
 		else if (gpio_get_pin_level(PA16) && clicked){
 			clickTime++;
 			if(clickTime>5) clicked = false;
-		}
-
-		/* ------ COUNTER UPDATE (will run on COUNT under USB) ------ */
-		if (counting && !user_typing) {
-			if (countUp) count++;
-			else count--;
-			count %= 1024;
-		}
-
-		/* ------ LED Update ------ */
-		gpio_set_port_level(GPIO_PORTA, 1023, 0);
-		gpio_set_port_level(GPIO_PORTA, count & 1023, 1);
-
-		/* ------ USB Streaming Output ONLY WHEN VALUE CHANGES ------ */
-		if (cdc_connected && didSplash) {
-			if (count != last_sent_count) {
-				char msg[32];
-				sprintf(msg, "COUNT: %lu\r\n", (unsigned long)count);
-				usb_serial_write(msg, strlen(msg));
-				last_sent_count = count;
-			}
 		}
 
 		delay_ms(speed);
