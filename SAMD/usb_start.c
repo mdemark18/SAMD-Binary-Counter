@@ -313,12 +313,13 @@ void handle_usb_command(char *cmd)
 			usb_serial_write("ERR\r\n", 5);
 		}
 	}
-	else if (strcmp(cmd, "DEBUG") == 0) {
+	else if (strcmp(cmd, "DEBUG") == 0) {			// Starts Debug Mode
 		debug_mode = true;
 		debug_step = 0;
 		debug_timer = 0;
-		counting = false;  // pause normal counting
+		counting = false;  
 		usb_serial_write("OK\r\n", 4);
+		counting = true;
 	}
 
 	else if (strncmp(cmd, "SPEED ", 6) == 0) {		// Allows the user to change the speed of the counting

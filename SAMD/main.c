@@ -1,7 +1,10 @@
 /*
 File:			main.c
 Author:			Miller DeMark
-Description:	Binary counter for ATSAMD21E15B with USB commands and debug LED sequence
+Description:	Built off of Ethan Schlepp's version, this completely finishes the Binary Counter Project
+				It has full UART, counts properly, debugs, and can be controlled over UART. 
+				
+Add Laters:		BAckwards counting, the one thing I somehow couldn't get.
 */
 
 #include "atmel_start.h"
@@ -19,7 +22,6 @@ uint8_t usb_cmd_index = 0;
 // Counter variables
 uint32_t count = 1023;		// Initial count
 uint32_t speed = 200;		// Counter speed (ms)
-bool countUp = true;
 bool counting = true;
 uint8_t buttonHold = 0;
 uint8_t clickTime = 0;
@@ -39,7 +41,7 @@ extern volatile bool cdc_connected;
 
 // LED patterns for DEBUG (matches 10-bit PORTA LEDs)
 const uint16_t debug_leds[] = {
-	1023, // all LEDs ON
+	
 	0x001, 0x002, 0x004, 0x008,
 	0x010, 0x020, 0x040, 0x080,
 	0x100, 0x200, 0x400
@@ -51,9 +53,7 @@ int main(void)
 	atmel_start_init();
 	usb_serial_begin();
 
-	// Initial LED splash
-	gpio_set_port_level(GPIO_PORTA, 1023, 1);
-	delay_ms(2000);
+	
 
 	bool didSplash = false; // USB splash screen flag
 
@@ -94,7 +94,7 @@ int main(void)
 					}
 					continue;
 				}
-				if (ch == 0x08 || ch == 0x7F) { // Backspace
+				if (ch == 0x08 || ch == 0x7F) {
 					if (usb_cmd_index > 0) {
 						usb_cmd_index--;
 						usb_serial_write("\b \b", 3);
@@ -108,13 +108,13 @@ int main(void)
 			}
 		}
 
-		// ---- DEBUG LED sequence ----
+		// DEBUG LED sequence
 		if (debug_mode) {
-			debug_timer += speed; // accumulate time
+			debug_timer += speed;
 
 			if (debug_step < DEBUG_STEPS) {
 				count = debug_leds[debug_step];
-				if (debug_timer >= 500) { // 500ms per step
+				if (debug_timer >= 50) { // 500ms per step
 					debug_step++;
 					debug_timer = 0;
 				}
@@ -126,18 +126,17 @@ int main(void)
 			}
 		}
 
-		// ---- Normal counter update (only if not in debug) ----
+		// Normal counter update (only if not in debug)
 		if (!debug_mode && counting && !user_typing) {
-			if (countUp) count++;
-			else count--;
+			count++;
 			count %= 1024;
 		}
 
-		// ---- LED Update ----
+		// LED Update 
 		gpio_set_port_level(GPIO_PORTA, 1023, 0);
 		gpio_set_port_level(GPIO_PORTA, count & 1023, 1);
 
-		// ---- USB streaming output ----
+		// USB streaming output
 		if (cdc_connected && didSplash) {
 			if (count != last_sent_count) {
 				char msg[32];
@@ -147,7 +146,7 @@ int main(void)
 			}
 		}
 
-		// ---- Button control ----
+		// Button control
 		if(!gpio_get_pin_level(PA16) && buttonHold < 255){
 			buttonHold++;
 			for (volatile uint32_t i = 0; i < 600000; i++);
@@ -159,11 +158,9 @@ int main(void)
 					clickTime = 0;
 					count = 1023;
 					gpio_set_port_level(GPIO_PORTA, 1023, 1);
-					counting = true;
-					countUp = true;
 				} else clicked = true;
 				} else {
-				countUp ^= true;
+
 				counting = true;
 			}
 			buttonHold = 0;
