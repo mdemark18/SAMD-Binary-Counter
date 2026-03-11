@@ -29,9 +29,9 @@ Idx Name          Size      VMA       LMA       File off  Algn
                   CONTENTS, READONLY, DEBUGGING
  12 .debug_line   0000de47  00000000  00000000  0006aa83  2**0
                   CONTENTS, READONLY, DEBUGGING
- 13 .debug_str    00082e0f  00000000  00000000  000788ca  2**0
+ 13 .debug_str    00082e21  00000000  00000000  000788ca  2**0
                   CONTENTS, READONLY, DEBUGGING
- 14 .debug_frame  00001764  00000000  00000000  000fb6dc  2**2
+ 14 .debug_frame  00001764  00000000  00000000  000fb6ec  2**2
                   CONTENTS, READONLY, DEBUGGING
 
 Disassembly of section .text:
@@ -4410,17 +4410,27 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     222c:	20000520 	.word	0x20000520
 
 00002230 <cdcdf_acm_req>:
+ * \param[in] ep Endpoint address.
+ * \param[in] req Pointer to the request.
+ * \return Operation status.
+ */
+static int32_t cdcdf_acm_req(uint8_t ep, struct usb_req *req, enum usb_ctrl_stage stage)
+{
     2230:	b5f0      	push	{r4, r5, r6, r7, lr}
     2232:	b083      	sub	sp, #12
     2234:	0006      	movs	r6, r0
     2236:	000c      	movs	r4, r1
     2238:	0015      	movs	r5, r2
+	if (0x01 != ((req->bmRequestType >> 5) & 0x03)) { // class request
     223a:	780a      	ldrb	r2, [r1, #0]
     223c:	0653      	lsls	r3, r2, #25
     223e:	0f9b      	lsrs	r3, r3, #30
     2240:	2b01      	cmp	r3, #1
     2242:	d000      	beq.n	2246 <cdcdf_acm_req+0x16>
     2244:	e06c      	b.n	2320 <cdcdf_acm_req+0xf0>
+		return ERR_NOT_FOUND;
+	}
+	if ((req->wIndex == _cdcdf_acm_funcd.func_iface[0]) || (req->wIndex == _cdcdf_acm_funcd.func_iface[1])) {
     2246:	7909      	ldrb	r1, [r1, #4]
     2248:	7963      	ldrb	r3, [r4, #5]
     224a:	021b      	lsls	r3, r3, #8
@@ -4433,35 +4443,51 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     2258:	7849      	ldrb	r1, [r1, #1]
     225a:	4299      	cmp	r1, r3
     225c:	d163      	bne.n	2326 <cdcdf_acm_req+0xf6>
+		if (req->bmRequestType & USB_EP_DIR_IN) {
     225e:	b252      	sxtb	r2, r2
     2260:	2a00      	cmp	r2, #0
     2262:	db0e      	blt.n	2282 <cdcdf_acm_req+0x52>
+	uint16_t                   len      = req->wLength;
     2264:	79a7      	ldrb	r7, [r4, #6]
     2266:	79e3      	ldrb	r3, [r4, #7]
     2268:	021b      	lsls	r3, r3, #8
     226a:	431f      	orrs	r7, r3
+	uint8_t *                  ctrl_buf = usbdc_get_ctrl_buffer();
     226c:	4b34      	ldr	r3, [pc, #208]	; (2340 <cdcdf_acm_req+0x110>)
     226e:	4798      	blx	r3
+	switch (req->bRequest) {
     2270:	7863      	ldrb	r3, [r4, #1]
     2272:	2b20      	cmp	r3, #32
     2274:	d018      	beq.n	22a8 <cdcdf_acm_req+0x78>
     2276:	2b22      	cmp	r3, #34	; 0x22
     2278:	d03c      	beq.n	22f4 <cdcdf_acm_req+0xc4>
+		return ERR_INVALID_ARG;
     227a:	200d      	movs	r0, #13
     227c:	4240      	negs	r0, r0
+			return cdcdf_acm_set_req(ep, req, stage);
+		}
+	} else {
+		return ERR_NOT_FOUND;
+	}
+}
     227e:	b003      	add	sp, #12
     2280:	bdf0      	pop	{r4, r5, r6, r7, pc}
+	if (USB_DATA_STAGE == stage) {
     2282:	2d01      	cmp	r5, #1
     2284:	d052      	beq.n	232c <cdcdf_acm_req+0xfc>
+	switch (req->bRequest) {
     2286:	7863      	ldrb	r3, [r4, #1]
     2288:	2b21      	cmp	r3, #33	; 0x21
     228a:	d151      	bne.n	2330 <cdcdf_acm_req+0x100>
+	uint16_t len = req->wLength;
     228c:	79a2      	ldrb	r2, [r4, #6]
     228e:	79e3      	ldrb	r3, [r4, #7]
     2290:	021b      	lsls	r3, r3, #8
+		if (sizeof(struct usb_cdc_line_coding) != len) {
     2292:	4313      	orrs	r3, r2
     2294:	2b07      	cmp	r3, #7
     2296:	d14e      	bne.n	2336 <cdcdf_acm_req+0x106>
+		return usbdc_xfer(ep, (uint8_t *)&usbd_cdc_line_coding, len, false);
     2298:	2300      	movs	r3, #0
     229a:	2207      	movs	r2, #7
     229c:	4927      	ldr	r1, [pc, #156]	; (233c <cdcdf_acm_req+0x10c>)
@@ -4470,15 +4496,19 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     22a2:	4c28      	ldr	r4, [pc, #160]	; (2344 <cdcdf_acm_req+0x114>)
     22a4:	47a0      	blx	r4
     22a6:	e7ea      	b.n	227e <cdcdf_acm_req+0x4e>
+		if (sizeof(struct usb_cdc_line_coding) != len) {
     22a8:	2f07      	cmp	r7, #7
     22aa:	d134      	bne.n	2316 <cdcdf_acm_req+0xe6>
+		if (USB_SETUP_STAGE == stage) {
     22ac:	2d00      	cmp	r5, #0
     22ae:	d01a      	beq.n	22e6 <cdcdf_acm_req+0xb6>
+			memcpy(&line_coding_tmp, ctrl_buf, sizeof(struct usb_cdc_line_coding));
     22b0:	2207      	movs	r2, #7
     22b2:	0001      	movs	r1, r0
     22b4:	4668      	mov	r0, sp
     22b6:	4b24      	ldr	r3, [pc, #144]	; (2348 <cdcdf_acm_req+0x118>)
     22b8:	4798      	blx	r3
+			if ((NULL == cdcdf_acm_set_line_coding) || (true == cdcdf_acm_set_line_coding(&line_coding_tmp))) {
     22ba:	4b20      	ldr	r3, [pc, #128]	; (233c <cdcdf_acm_req+0x10c>)
     22bc:	691b      	ldr	r3, [r3, #16]
     22be:	2b00      	cmp	r3, #0
@@ -4486,9 +4516,12 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     22c2:	4668      	mov	r0, sp
     22c4:	4798      	blx	r3
     22c6:	0003      	movs	r3, r0
+			return ERR_NONE;
     22c8:	2000      	movs	r0, #0
+			if ((NULL == cdcdf_acm_set_line_coding) || (true == cdcdf_acm_set_line_coding(&line_coding_tmp))) {
     22ca:	2b00      	cmp	r3, #0
     22cc:	d0d7      	beq.n	227e <cdcdf_acm_req+0x4e>
+				usbd_cdc_line_coding = line_coding_tmp;
     22ce:	4a1b      	ldr	r2, [pc, #108]	; (233c <cdcdf_acm_req+0x10c>)
     22d0:	0013      	movs	r3, r2
     22d2:	9900      	ldr	r1, [sp, #0]
@@ -4499,8 +4532,10 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     22dc:	466a      	mov	r2, sp
     22de:	7992      	ldrb	r2, [r2, #6]
     22e0:	739a      	strb	r2, [r3, #14]
+			return ERR_NONE;
     22e2:	2000      	movs	r0, #0
     22e4:	e7cb      	b.n	227e <cdcdf_acm_req+0x4e>
+			return usbdc_xfer(ep, ctrl_buf, len, false);
     22e6:	2300      	movs	r3, #0
     22e8:	2207      	movs	r2, #7
     22ea:	0001      	movs	r1, r0
@@ -4508,39 +4543,51 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     22ee:	4c15      	ldr	r4, [pc, #84]	; (2344 <cdcdf_acm_req+0x114>)
     22f0:	47a0      	blx	r4
     22f2:	e7c4      	b.n	227e <cdcdf_acm_req+0x4e>
+		usbdc_xfer(0, NULL, 0, 0);
     22f4:	2300      	movs	r3, #0
     22f6:	2200      	movs	r2, #0
     22f8:	2100      	movs	r1, #0
     22fa:	2000      	movs	r0, #0
     22fc:	4d11      	ldr	r5, [pc, #68]	; (2344 <cdcdf_acm_req+0x114>)
     22fe:	47a8      	blx	r5
+		if (NULL != cdcdf_acm_notify_state) {
     2300:	4b0e      	ldr	r3, [pc, #56]	; (233c <cdcdf_acm_req+0x10c>)
     2302:	695b      	ldr	r3, [r3, #20]
     2304:	2b00      	cmp	r3, #0
     2306:	d009      	beq.n	231c <cdcdf_acm_req+0xec>
+			cdcdf_acm_notify_state(req->wValue);
     2308:	78a2      	ldrb	r2, [r4, #2]
     230a:	78e0      	ldrb	r0, [r4, #3]
     230c:	0200      	lsls	r0, r0, #8
     230e:	4310      	orrs	r0, r2
     2310:	4798      	blx	r3
+		return ERR_NONE;
     2312:	2000      	movs	r0, #0
     2314:	e7b3      	b.n	227e <cdcdf_acm_req+0x4e>
+			return ERR_INVALID_DATA;
     2316:	2001      	movs	r0, #1
     2318:	4240      	negs	r0, r0
     231a:	e7b0      	b.n	227e <cdcdf_acm_req+0x4e>
+		return ERR_NONE;
     231c:	2000      	movs	r0, #0
+			return cdcdf_acm_set_req(ep, req, stage);
     231e:	e7ae      	b.n	227e <cdcdf_acm_req+0x4e>
+		return ERR_NOT_FOUND;
     2320:	200a      	movs	r0, #10
     2322:	4240      	negs	r0, r0
     2324:	e7ab      	b.n	227e <cdcdf_acm_req+0x4e>
+		return ERR_NOT_FOUND;
     2326:	200a      	movs	r0, #10
     2328:	4240      	negs	r0, r0
     232a:	e7a8      	b.n	227e <cdcdf_acm_req+0x4e>
+		return ERR_NONE;
     232c:	2000      	movs	r0, #0
     232e:	e7a6      	b.n	227e <cdcdf_acm_req+0x4e>
+		return ERR_INVALID_ARG;
     2330:	200d      	movs	r0, #13
     2332:	4240      	negs	r0, r0
     2334:	e7a3      	b.n	227e <cdcdf_acm_req+0x4e>
+			return ERR_INVALID_DATA;
     2336:	2001      	movs	r0, #1
     2338:	4240      	negs	r0, r0
     233a:	e7a0      	b.n	227e <cdcdf_acm_req+0x4e>
@@ -4550,6 +4597,7 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     2348:	000034c1 	.word	0x000034c1
 
 0000234c <cdcdf_acm_ctrl>:
+{
     234c:	b5f0      	push	{r4, r5, r6, r7, lr}
     234e:	46de      	mov	lr, fp
     2350:	4657      	mov	r7, sl
@@ -4558,6 +4606,7 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     2356:	b5e0      	push	{r5, r6, r7, lr}
     2358:	b083      	sub	sp, #12
     235a:	0016      	movs	r6, r2
+	switch (ctrl) {
     235c:	2901      	cmp	r1, #1
     235e:	d068      	beq.n	2432 <cdcdf_acm_ctrl+0xe6>
     2360:	2900      	cmp	r1, #0
@@ -4565,8 +4614,10 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     2364:	2902      	cmp	r1, #2
     2366:	d100      	bne.n	236a <cdcdf_acm_ctrl+0x1e>
     2368:	e093      	b.n	2492 <cdcdf_acm_ctrl+0x146>
+		return ERR_INVALID_ARG;
     236a:	200d      	movs	r0, #13
     236c:	4240      	negs	r0, r0
+}
     236e:	b003      	add	sp, #12
     2370:	bc3c      	pop	{r2, r3, r4, r5}
     2372:	4690      	mov	r8, r2
@@ -4574,9 +4625,12 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     2376:	46a2      	mov	sl, r4
     2378:	46ab      	mov	fp, r5
     237a:	bdf0      	pop	{r4, r5, r6, r7, pc}
+	struct cdcdf_acm_func_data *func_data = (struct cdcdf_acm_func_data *)(drv->func_data);
     237c:	6883      	ldr	r3, [r0, #8]
     237e:	4698      	mov	r8, r3
+	ifc = desc->sod;
     2380:	6810      	ldr	r0, [r2, #0]
+		if (NULL == ifc) {
     2382:	2800      	cmp	r0, #0
     2384:	d100      	bne.n	2388 <cdcdf_acm_ctrl+0x3c>
     2386:	e087      	b.n	2498 <cdcdf_acm_ctrl+0x14c>
@@ -4584,147 +4638,205 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     238a:	2301      	movs	r3, #1
     238c:	4443      	add	r3, r8
     238e:	469b      	mov	fp, r3
+			if (usb_d_ep_init(ep_desc.bEndpointAddress, ep_desc.bmAttributes, ep_desc.wMaxPacketSize)) {
     2390:	4f47      	ldr	r7, [pc, #284]	; (24b0 <cdcdf_acm_ctrl+0x164>)
+				usb_d_ep_enable(func_data->func_ep_out);
     2392:	4b48      	ldr	r3, [pc, #288]	; (24b4 <cdcdf_acm_ctrl+0x168>)
     2394:	4699      	mov	r9, r3
+		ifc_desc.bInterfaceNumber = ifc[2];
     2396:	7882      	ldrb	r2, [r0, #2]
+		if ((CDC_CLASS_COMM == ifc_desc.bInterfaceClass) || (CDC_CLASS_DATA == ifc_desc.bInterfaceClass)) {
     2398:	7943      	ldrb	r3, [r0, #5]
     239a:	2108      	movs	r1, #8
     239c:	438b      	bics	r3, r1
     239e:	2b02      	cmp	r3, #2
     23a0:	d002      	beq.n	23a8 <cdcdf_acm_ctrl+0x5c>
+			return ERR_NOT_FOUND;
     23a2:	200a      	movs	r0, #10
     23a4:	4240      	negs	r0, r0
     23a6:	e7e2      	b.n	236e <cdcdf_acm_ctrl+0x22>
     23a8:	9901      	ldr	r1, [sp, #4]
     23aa:	468a      	mov	sl, r1
+			if (func_data->func_iface[i] == ifc_desc.bInterfaceNumber) { // Initialized
     23ac:	780b      	ldrb	r3, [r1, #0]
     23ae:	429a      	cmp	r2, r3
     23b0:	d075      	beq.n	249e <cdcdf_acm_ctrl+0x152>
+			} else if (func_data->func_iface[i] != 0xFF) { // Occupied
     23b2:	2bff      	cmp	r3, #255	; 0xff
     23b4:	d176      	bne.n	24a4 <cdcdf_acm_ctrl+0x158>
+				func_data->func_iface[i] = ifc_desc.bInterfaceNumber;
     23b6:	700a      	strb	r2, [r1, #0]
+		ep = usb_find_desc(ifc, desc->eod, USB_DT_ENDPOINT);
     23b8:	2205      	movs	r2, #5
     23ba:	6871      	ldr	r1, [r6, #4]
     23bc:	4b3e      	ldr	r3, [pc, #248]	; (24b8 <cdcdf_acm_ctrl+0x16c>)
     23be:	4798      	blx	r3
     23c0:	1e04      	subs	r4, r0, #0
+		while (NULL != ep) {
     23c2:	d11e      	bne.n	2402 <cdcdf_acm_ctrl+0xb6>
+		ifc = usb_find_desc(usb_desc_next(desc->sod), desc->eod, USB_DT_INTERFACE);
     23c4:	6830      	ldr	r0, [r6, #0]
+ *  \param[in] desc Byte pointer to the descriptor start address
+ *  \return Byte pointer to the next descriptor
+ */
+static inline uint8_t *usb_desc_next(uint8_t *desc)
+{
+	return (desc + usb_desc_len(desc));
     23c6:	7803      	ldrb	r3, [r0, #0]
     23c8:	18c0      	adds	r0, r0, r3
     23ca:	2204      	movs	r2, #4
     23cc:	6871      	ldr	r1, [r6, #4]
     23ce:	4b3a      	ldr	r3, [pc, #232]	; (24b8 <cdcdf_acm_ctrl+0x16c>)
     23d0:	4798      	blx	r3
+	for (i = 0; i < 2; i++) {
     23d2:	9b01      	ldr	r3, [sp, #4]
     23d4:	455b      	cmp	r3, fp
     23d6:	d027      	beq.n	2428 <cdcdf_acm_ctrl+0xdc>
     23d8:	9b01      	ldr	r3, [sp, #4]
     23da:	3301      	adds	r3, #1
     23dc:	9301      	str	r3, [sp, #4]
+		if (NULL == ifc) {
     23de:	2800      	cmp	r0, #0
     23e0:	d1d9      	bne.n	2396 <cdcdf_acm_ctrl+0x4a>
+			return ERR_NOT_FOUND;
     23e2:	200a      	movs	r0, #10
     23e4:	4240      	negs	r0, r0
     23e6:	e7c2      	b.n	236e <cdcdf_acm_ctrl+0x22>
+				func_data->func_ep_in[i] = ep_desc.bEndpointAddress;
     23e8:	4653      	mov	r3, sl
     23ea:	709d      	strb	r5, [r3, #2]
+				usb_d_ep_enable(func_data->func_ep_in[i]);
     23ec:	0028      	movs	r0, r5
     23ee:	4b31      	ldr	r3, [pc, #196]	; (24b4 <cdcdf_acm_ctrl+0x168>)
     23f0:	4798      	blx	r3
+			desc->sod = ep;
     23f2:	6034      	str	r4, [r6, #0]
     23f4:	7820      	ldrb	r0, [r4, #0]
     23f6:	1820      	adds	r0, r4, r0
+			ep        = usb_find_ep_desc(usb_desc_next(desc->sod), desc->eod);
     23f8:	6871      	ldr	r1, [r6, #4]
     23fa:	4b30      	ldr	r3, [pc, #192]	; (24bc <cdcdf_acm_ctrl+0x170>)
     23fc:	4798      	blx	r3
     23fe:	1e04      	subs	r4, r0, #0
+		while (NULL != ep) {
     2400:	d0e0      	beq.n	23c4 <cdcdf_acm_ctrl+0x78>
+			ep_desc.bEndpointAddress = ep[2];
     2402:	78a5      	ldrb	r5, [r4, #2]
+	return (ptr[0] + (ptr[1] << 8));
     2404:	7963      	ldrb	r3, [r4, #5]
     2406:	021b      	lsls	r3, r3, #8
     2408:	7922      	ldrb	r2, [r4, #4]
     240a:	18d2      	adds	r2, r2, r3
+			if (usb_d_ep_init(ep_desc.bEndpointAddress, ep_desc.bmAttributes, ep_desc.wMaxPacketSize)) {
     240c:	b292      	uxth	r2, r2
     240e:	78e1      	ldrb	r1, [r4, #3]
     2410:	0028      	movs	r0, r5
     2412:	47b8      	blx	r7
     2414:	2800      	cmp	r0, #0
     2416:	d148      	bne.n	24aa <cdcdf_acm_ctrl+0x15e>
+			if (ep_desc.bEndpointAddress & USB_EP_DIR_IN) {
     2418:	b26b      	sxtb	r3, r5
     241a:	2b00      	cmp	r3, #0
     241c:	dbe4      	blt.n	23e8 <cdcdf_acm_ctrl+0x9c>
+				func_data->func_ep_out = ep_desc.bEndpointAddress;
     241e:	4643      	mov	r3, r8
     2420:	711d      	strb	r5, [r3, #4]
+				usb_d_ep_enable(func_data->func_ep_out);
     2422:	0028      	movs	r0, r5
     2424:	47c8      	blx	r9
     2426:	e7e4      	b.n	23f2 <cdcdf_acm_ctrl+0xa6>
+	_cdcdf_acm_funcd.enabled = true;
     2428:	2201      	movs	r2, #1
     242a:	4b25      	ldr	r3, [pc, #148]	; (24c0 <cdcdf_acm_ctrl+0x174>)
     242c:	715a      	strb	r2, [r3, #5]
+	return ERR_NONE;
     242e:	2000      	movs	r0, #0
     2430:	e79d      	b.n	236e <cdcdf_acm_ctrl+0x22>
+	struct cdcdf_acm_func_data *func_data = (struct cdcdf_acm_func_data *)(drv->func_data);
     2432:	6884      	ldr	r4, [r0, #8]
+	if (desc) {
     2434:	2a00      	cmp	r2, #0
     2436:	d008      	beq.n	244a <cdcdf_acm_ctrl+0xfe>
+		ifc_desc.bInterfaceClass = desc->sod[5];
     2438:	6813      	ldr	r3, [r2, #0]
+		if ((ifc_desc.bInterfaceClass != CDC_CLASS_COMM) && (ifc_desc.bInterfaceClass != CDC_CLASS_DATA)) {
     243a:	795b      	ldrb	r3, [r3, #5]
     243c:	2208      	movs	r2, #8
     243e:	4393      	bics	r3, r2
     2440:	2b02      	cmp	r3, #2
     2442:	d002      	beq.n	244a <cdcdf_acm_ctrl+0xfe>
+			return ERR_NOT_FOUND;
     2444:	200a      	movs	r0, #10
     2446:	4240      	negs	r0, r0
     2448:	e791      	b.n	236e <cdcdf_acm_ctrl+0x22>
+		if (func_data->func_iface[i] == 0xFF) {
     244a:	7823      	ldrb	r3, [r4, #0]
     244c:	2bff      	cmp	r3, #255	; 0xff
     244e:	d008      	beq.n	2462 <cdcdf_acm_ctrl+0x116>
+			func_data->func_iface[i] = 0xFF;
     2450:	23ff      	movs	r3, #255	; 0xff
     2452:	7023      	strb	r3, [r4, #0]
+			if (func_data->func_ep_in[i] != 0xFF) {
     2454:	78a0      	ldrb	r0, [r4, #2]
     2456:	28ff      	cmp	r0, #255	; 0xff
     2458:	d003      	beq.n	2462 <cdcdf_acm_ctrl+0x116>
+				usb_d_ep_deinit(func_data->func_ep_in[i]);
     245a:	4b1a      	ldr	r3, [pc, #104]	; (24c4 <cdcdf_acm_ctrl+0x178>)
     245c:	4798      	blx	r3
+				func_data->func_ep_in[i] = 0xFF;
     245e:	23ff      	movs	r3, #255	; 0xff
     2460:	70a3      	strb	r3, [r4, #2]
+		if (func_data->func_iface[i] == 0xFF) {
     2462:	7863      	ldrb	r3, [r4, #1]
     2464:	2bff      	cmp	r3, #255	; 0xff
     2466:	d008      	beq.n	247a <cdcdf_acm_ctrl+0x12e>
+			func_data->func_iface[i] = 0xFF;
     2468:	23ff      	movs	r3, #255	; 0xff
     246a:	7063      	strb	r3, [r4, #1]
+			if (func_data->func_ep_in[i] != 0xFF) {
     246c:	78e0      	ldrb	r0, [r4, #3]
     246e:	28ff      	cmp	r0, #255	; 0xff
     2470:	d003      	beq.n	247a <cdcdf_acm_ctrl+0x12e>
+				usb_d_ep_deinit(func_data->func_ep_in[i]);
     2472:	4b14      	ldr	r3, [pc, #80]	; (24c4 <cdcdf_acm_ctrl+0x178>)
     2474:	4798      	blx	r3
+				func_data->func_ep_in[i] = 0xFF;
     2476:	23ff      	movs	r3, #255	; 0xff
     2478:	70e3      	strb	r3, [r4, #3]
+	if (func_data->func_ep_out != 0xFF) {
     247a:	7920      	ldrb	r0, [r4, #4]
     247c:	28ff      	cmp	r0, #255	; 0xff
     247e:	d003      	beq.n	2488 <cdcdf_acm_ctrl+0x13c>
+		usb_d_ep_deinit(func_data->func_ep_out);
     2480:	4b10      	ldr	r3, [pc, #64]	; (24c4 <cdcdf_acm_ctrl+0x178>)
     2482:	4798      	blx	r3
+		func_data->func_ep_out = 0xFF;
     2484:	23ff      	movs	r3, #255	; 0xff
     2486:	7123      	strb	r3, [r4, #4]
+	_cdcdf_acm_funcd.enabled = false;
     2488:	2200      	movs	r2, #0
     248a:	4b0d      	ldr	r3, [pc, #52]	; (24c0 <cdcdf_acm_ctrl+0x174>)
     248c:	715a      	strb	r2, [r3, #5]
+	return ERR_NONE;
     248e:	2000      	movs	r0, #0
     2490:	e76d      	b.n	236e <cdcdf_acm_ctrl+0x22>
+		return ERR_UNSUPPORTED_OP;
     2492:	201b      	movs	r0, #27
     2494:	4240      	negs	r0, r0
     2496:	e76a      	b.n	236e <cdcdf_acm_ctrl+0x22>
+			return ERR_NOT_FOUND;
     2498:	200a      	movs	r0, #10
     249a:	4240      	negs	r0, r0
     249c:	e767      	b.n	236e <cdcdf_acm_ctrl+0x22>
+				return ERR_ALREADY_INITIALIZED;
     249e:	2012      	movs	r0, #18
     24a0:	4240      	negs	r0, r0
     24a2:	e764      	b.n	236e <cdcdf_acm_ctrl+0x22>
+				return ERR_NO_RESOURCE;
     24a4:	201c      	movs	r0, #28
     24a6:	4240      	negs	r0, r0
     24a8:	e761      	b.n	236e <cdcdf_acm_ctrl+0x22>
+				return ERR_NOT_INITIALIZED;
     24aa:	2014      	movs	r0, #20
     24ac:	4240      	negs	r0, r0
     24ae:	e75e      	b.n	236e <cdcdf_acm_ctrl+0x22>
@@ -4736,24 +4848,42 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     24c4:	000007bd 	.word	0x000007bd
 
 000024c8 <cdcdf_acm_init>:
+
+/**
+ * \brief Initialize the USB CDC ACM Function Driver
+ */
+int32_t cdcdf_acm_init(void)
+{
     24c8:	b510      	push	{r4, lr}
+	if (usbdc_get_state() > USBD_S_POWER) {
     24ca:	4b0a      	ldr	r3, [pc, #40]	; (24f4 <cdcdf_acm_init+0x2c>)
     24cc:	4798      	blx	r3
     24ce:	2801      	cmp	r0, #1
     24d0:	d80c      	bhi.n	24ec <cdcdf_acm_init+0x24>
+		return ERR_DENIED;
+	}
+
+	_cdcdf_acm.ctrl      = cdcdf_acm_ctrl;
     24d2:	4809      	ldr	r0, [pc, #36]	; (24f8 <cdcdf_acm_init+0x30>)
     24d4:	4b09      	ldr	r3, [pc, #36]	; (24fc <cdcdf_acm_init+0x34>)
     24d6:	61c3      	str	r3, [r0, #28]
+	_cdcdf_acm.func_data = &_cdcdf_acm_funcd;
     24d8:	6200      	str	r0, [r0, #32]
+
+	usbdc_register_function(&_cdcdf_acm);
     24da:	3018      	adds	r0, #24
     24dc:	4b08      	ldr	r3, [pc, #32]	; (2500 <cdcdf_acm_init+0x38>)
     24de:	4798      	blx	r3
+	usbdc_register_handler(USBDC_HDL_REQ, &cdcdf_acm_req_h);
     24e0:	4908      	ldr	r1, [pc, #32]	; (2504 <cdcdf_acm_init+0x3c>)
     24e2:	2001      	movs	r0, #1
     24e4:	4b08      	ldr	r3, [pc, #32]	; (2508 <cdcdf_acm_init+0x40>)
     24e6:	4798      	blx	r3
+	return ERR_NONE;
     24e8:	2000      	movs	r0, #0
+}
     24ea:	bd10      	pop	{r4, pc}
+		return ERR_DENIED;
     24ec:	2011      	movs	r0, #17
     24ee:	4240      	negs	r0, r0
     24f0:	e7fb      	b.n	24ea <cdcdf_acm_init+0x22>
@@ -4766,12 +4896,26 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     2508:	00002bb5 	.word	0x00002bb5
 
 0000250c <cdcdf_acm_read>:
+
+/**
+ * \brief USB CDC ACM Function Read Data
+ */
+int32_t cdcdf_acm_read(uint8_t *buf, uint32_t size)
+{
     250c:	b510      	push	{r4, lr}
     250e:	0004      	movs	r4, r0
+/**
+ * \brief Check whether CDC ACM Function is enabled
+ */
+bool cdcdf_acm_is_enabled(void)
+{
+	return _cdcdf_acm_funcd.enabled;
     2510:	4b07      	ldr	r3, [pc, #28]	; (2530 <cdcdf_acm_read+0x24>)
+	if (!cdcdf_acm_is_enabled()) {
     2512:	795b      	ldrb	r3, [r3, #5]
     2514:	2b00      	cmp	r3, #0
     2516:	d007      	beq.n	2528 <cdcdf_acm_read+0x1c>
+	return usbdc_xfer(_cdcdf_acm_funcd.func_ep_out, buf, size, false);
     2518:	4b05      	ldr	r3, [pc, #20]	; (2530 <cdcdf_acm_read+0x24>)
     251a:	7918      	ldrb	r0, [r3, #4]
     251c:	2300      	movs	r3, #0
@@ -4779,7 +4923,9 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     2520:	0021      	movs	r1, r4
     2522:	4c04      	ldr	r4, [pc, #16]	; (2534 <cdcdf_acm_read+0x28>)
     2524:	47a0      	blx	r4
+}
     2526:	bd10      	pop	{r4, pc}
+		return ERR_DENIED;
     2528:	2011      	movs	r0, #17
     252a:	4240      	negs	r0, r0
     252c:	e7fb      	b.n	2526 <cdcdf_acm_read+0x1a>
@@ -4788,12 +4934,16 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     2534:	00002759 	.word	0x00002759
 
 00002538 <cdcdf_acm_write>:
+{
     2538:	b510      	push	{r4, lr}
     253a:	0004      	movs	r4, r0
+	return _cdcdf_acm_funcd.enabled;
     253c:	4b07      	ldr	r3, [pc, #28]	; (255c <cdcdf_acm_write+0x24>)
+	if (!cdcdf_acm_is_enabled()) {
     253e:	795b      	ldrb	r3, [r3, #5]
     2540:	2b00      	cmp	r3, #0
     2542:	d007      	beq.n	2554 <cdcdf_acm_write+0x1c>
+	return usbdc_xfer(_cdcdf_acm_funcd.func_ep_in[CDCDF_ACM_DATA_EP_INDEX], buf, size, true);
     2544:	4b05      	ldr	r3, [pc, #20]	; (255c <cdcdf_acm_write+0x24>)
     2546:	78d8      	ldrb	r0, [r3, #3]
     2548:	2301      	movs	r3, #1
@@ -4801,7 +4951,9 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     254c:	0021      	movs	r1, r4
     254e:	4c04      	ldr	r4, [pc, #16]	; (2560 <cdcdf_acm_write+0x28>)
     2550:	47a0      	blx	r4
+}
     2552:	bd10      	pop	{r4, pc}
+		return ERR_DENIED;
     2554:	2011      	movs	r0, #17
     2556:	4240      	negs	r0, r0
     2558:	e7fb      	b.n	2552 <cdcdf_acm_write+0x1a>
@@ -4810,7 +4962,9 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     2560:	00002759 	.word	0x00002759
 
 00002564 <cdcdf_acm_register_callback>:
+{
     2564:	b510      	push	{r4, lr}
+	switch (cb_type) {
     2566:	2801      	cmp	r0, #1
     2568:	d010      	beq.n	258c <cdcdf_acm_register_callback+0x28>
     256a:	2800      	cmp	r0, #0
@@ -4819,68 +4973,113 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     2570:	d014      	beq.n	259c <cdcdf_acm_register_callback+0x38>
     2572:	2803      	cmp	r0, #3
     2574:	d016      	beq.n	25a4 <cdcdf_acm_register_callback+0x40>
+		return ERR_INVALID_ARG;
     2576:	200d      	movs	r0, #13
     2578:	4240      	negs	r0, r0
     257a:	e006      	b.n	258a <cdcdf_acm_register_callback+0x26>
+		usb_d_ep_register_callback(_cdcdf_acm_funcd.func_ep_out, USB_D_EP_CB_XFER, func);
     257c:	4b0b      	ldr	r3, [pc, #44]	; (25ac <cdcdf_acm_register_callback+0x48>)
     257e:	7918      	ldrb	r0, [r3, #4]
     2580:	000a      	movs	r2, r1
     2582:	2102      	movs	r1, #2
     2584:	4b0a      	ldr	r3, [pc, #40]	; (25b0 <cdcdf_acm_register_callback+0x4c>)
     2586:	4798      	blx	r3
+	return ERR_NONE;
     2588:	2000      	movs	r0, #0
+}
     258a:	bd10      	pop	{r4, pc}
+		usb_d_ep_register_callback(_cdcdf_acm_funcd.func_ep_in[CDCDF_ACM_DATA_EP_INDEX], USB_D_EP_CB_XFER, func);
     258c:	4b07      	ldr	r3, [pc, #28]	; (25ac <cdcdf_acm_register_callback+0x48>)
     258e:	78d8      	ldrb	r0, [r3, #3]
     2590:	000a      	movs	r2, r1
     2592:	2102      	movs	r1, #2
     2594:	4b06      	ldr	r3, [pc, #24]	; (25b0 <cdcdf_acm_register_callback+0x4c>)
     2596:	4798      	blx	r3
+	return ERR_NONE;
     2598:	2000      	movs	r0, #0
+		break;
     259a:	e7f6      	b.n	258a <cdcdf_acm_register_callback+0x26>
+		cdcdf_acm_set_line_coding = (cdcdf_acm_set_line_coding_t)func;
     259c:	4b03      	ldr	r3, [pc, #12]	; (25ac <cdcdf_acm_register_callback+0x48>)
     259e:	6119      	str	r1, [r3, #16]
+	return ERR_NONE;
     25a0:	2000      	movs	r0, #0
+		break;
     25a2:	e7f2      	b.n	258a <cdcdf_acm_register_callback+0x26>
+		cdcdf_acm_notify_state = (cdcdf_acm_notify_state_t)func;
     25a4:	4b01      	ldr	r3, [pc, #4]	; (25ac <cdcdf_acm_register_callback+0x48>)
     25a6:	6159      	str	r1, [r3, #20]
+	return ERR_NONE;
     25a8:	2000      	movs	r0, #0
+		break;
     25aa:	e7ee      	b.n	258a <cdcdf_acm_register_callback+0x26>
     25ac:	200004d8 	.word	0x200004d8
     25b0:	000009c5 	.word	0x000009c5
 
 000025b4 <usbdc_unconfig>:
+
+/**
+ * \brief Unconfig, close all interfaces
+ */
+static void usbdc_unconfig(void)
+{
     25b4:	b510      	push	{r4, lr}
+	struct usbdf_driver *func = (struct usbdf_driver *)usbdc.func_list.head;
     25b6:	4b06      	ldr	r3, [pc, #24]	; (25d0 <usbdc_unconfig+0x1c>)
     25b8:	691c      	ldr	r4, [r3, #16]
+	while (NULL != func) {
     25ba:	2c00      	cmp	r4, #0
     25bc:	d007      	beq.n	25ce <usbdc_unconfig+0x1a>
+		func->ctrl(func, USBDF_DISABLE, NULL);
     25be:	2200      	movs	r2, #0
     25c0:	2101      	movs	r1, #1
     25c2:	0020      	movs	r0, r4
     25c4:	6863      	ldr	r3, [r4, #4]
     25c6:	4798      	blx	r3
+		func = func->next;
     25c8:	6824      	ldr	r4, [r4, #0]
+	while (NULL != func) {
     25ca:	2c00      	cmp	r4, #0
     25cc:	d1f7      	bne.n	25be <usbdc_unconfig+0xa>
+	}
+}
     25ce:	bd10      	pop	{r4, pc}
     25d0:	200004fc 	.word	0x200004fc
 
 000025d4 <usbdc_change_notify>:
+	}
+}
+
+/** Invoke all registered Change notification callbacks. */
+static void usbdc_change_notify(enum usbdc_change_type change, uint32_t value)
+{
     25d4:	b570      	push	{r4, r5, r6, lr}
     25d6:	0006      	movs	r6, r0
     25d8:	000d      	movs	r5, r1
+	struct usbdc_change_handler *cg = (struct usbdc_change_handler *)usbdc.handlers.change_list.head;
     25da:	4b07      	ldr	r3, [pc, #28]	; (25f8 <usbdc_change_notify+0x24>)
     25dc:	68dc      	ldr	r4, [r3, #12]
+
+	while (cg != NULL) {
     25de:	2c00      	cmp	r4, #0
     25e0:	d103      	bne.n	25ea <usbdc_change_notify+0x16>
+		if (NULL != cg->cb) {
+			cg->cb(change, value);
+		}
+		cg = cg->next;
+	}
+}
     25e2:	bd70      	pop	{r4, r5, r6, pc}
+		cg = cg->next;
     25e4:	6824      	ldr	r4, [r4, #0]
+	while (cg != NULL) {
     25e6:	2c00      	cmp	r4, #0
     25e8:	d0fb      	beq.n	25e2 <usbdc_change_notify+0xe>
+		if (NULL != cg->cb) {
     25ea:	6863      	ldr	r3, [r4, #4]
     25ec:	2b00      	cmp	r3, #0
     25ee:	d0f9      	beq.n	25e4 <usbdc_change_notify+0x10>
+			cg->cb(change, value);
     25f0:	0029      	movs	r1, r5
     25f2:	0030      	movs	r0, r6
     25f4:	4798      	blx	r3
@@ -4888,77 +5087,134 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     25f8:	200004fc 	.word	0x200004fc
 
 000025fc <usbdc_request_handler>:
+
+/** Invoke all registered request callbacks until request handled. */
+static int32_t usbdc_request_handler(uint8_t ep, struct usb_req *req, enum usb_ctrl_stage stage)
+{
     25fc:	b5f8      	push	{r3, r4, r5, r6, r7, lr}
     25fe:	0007      	movs	r7, r0
     2600:	000e      	movs	r6, r1
     2602:	0015      	movs	r5, r2
+	struct usbdc_req_handler *h = (struct usbdc_req_handler *)usbdc.handlers.req_list.head;
     2604:	4b0d      	ldr	r3, [pc, #52]	; (263c <usbdc_request_handler+0x40>)
     2606:	689c      	ldr	r4, [r3, #8]
+	int32_t                   rc;
+
+	while (h != NULL) {
     2608:	2c00      	cmp	r4, #0
     260a:	d104      	bne.n	2616 <usbdc_request_handler+0x1a>
+				return -1;
+			}
+		}
+		h = h->next;
+	}
+	return false;
     260c:	2000      	movs	r0, #0
     260e:	e011      	b.n	2634 <usbdc_request_handler+0x38>
+		h = h->next;
     2610:	6824      	ldr	r4, [r4, #0]
+	while (h != NULL) {
     2612:	2c00      	cmp	r4, #0
     2614:	d00d      	beq.n	2632 <usbdc_request_handler+0x36>
+		if (NULL != h->cb) {
     2616:	6863      	ldr	r3, [r4, #4]
     2618:	2b00      	cmp	r3, #0
     261a:	d0f9      	beq.n	2610 <usbdc_request_handler+0x14>
+			rc = h->cb(ep, req, stage);
     261c:	002a      	movs	r2, r5
     261e:	0031      	movs	r1, r6
     2620:	0038      	movs	r0, r7
     2622:	4798      	blx	r3
+			if (0 == rc) {
     2624:	2800      	cmp	r0, #0
     2626:	d006      	beq.n	2636 <usbdc_request_handler+0x3a>
+			} else if (ERR_NOT_FOUND != rc) {
     2628:	300a      	adds	r0, #10
     262a:	d0f1      	beq.n	2610 <usbdc_request_handler+0x14>
+				return -1;
     262c:	2001      	movs	r0, #1
     262e:	4240      	negs	r0, r0
     2630:	e000      	b.n	2634 <usbdc_request_handler+0x38>
+	return false;
     2632:	2000      	movs	r0, #0
+}
     2634:	bdf8      	pop	{r3, r4, r5, r6, r7, pc}
+				return true;
     2636:	2001      	movs	r0, #1
     2638:	e7fc      	b.n	2634 <usbdc_request_handler+0x38>
     263a:	46c0      	nop			; (mov r8, r8)
     263c:	200004fc 	.word	0x200004fc
 
 00002640 <usbd_sof_cb>:
+
+/**
+ * \brief Callback invoked on USB device SOF
+ */
+static void usbd_sof_cb(void)
+{
     2640:	b510      	push	{r4, lr}
+	struct usbdc_sof_handler *sof = (struct usbdc_sof_handler *)usbdc.handlers.sof_list.head;
     2642:	4b06      	ldr	r3, [pc, #24]	; (265c <usbd_sof_cb+0x1c>)
     2644:	685c      	ldr	r4, [r3, #4]
+	while (sof != NULL) {
     2646:	2c00      	cmp	r4, #0
     2648:	d103      	bne.n	2652 <usbd_sof_cb+0x12>
+	usbdc_sof_notify();
+}
     264a:	bd10      	pop	{r4, pc}
+		sof = sof->next;
     264c:	6824      	ldr	r4, [r4, #0]
+	while (sof != NULL) {
     264e:	2c00      	cmp	r4, #0
     2650:	d0fb      	beq.n	264a <usbd_sof_cb+0xa>
+		if (NULL != sof->cb) {
     2652:	6863      	ldr	r3, [r4, #4]
     2654:	2b00      	cmp	r3, #0
     2656:	d0f9      	beq.n	264c <usbd_sof_cb+0xc>
+			sof->cb();
     2658:	4798      	blx	r3
     265a:	e7f7      	b.n	264c <usbd_sof_cb+0xc>
     265c:	200004fc 	.word	0x200004fc
 
 00002660 <usbdc_cb_ctl_done>:
+ * \return Data has error or not.
+ * \retval true There is data error, protocol error.
+ * \retval false There is no data error.
+ */
+static bool usbdc_cb_ctl_done(const uint8_t ep, const enum usb_xfer_code code, struct usb_req *req)
+{
     2660:	b510      	push	{r4, lr}
     2662:	0014      	movs	r4, r2
+	(void)ep;
+
+	switch (code) {
     2664:	2900      	cmp	r1, #0
     2666:	d003      	beq.n	2670 <usbdc_cb_ctl_done+0x10>
     2668:	2901      	cmp	r1, #1
     266a:	d029      	beq.n	26c0 <usbdc_cb_ctl_done+0x60>
+		return usbdc_ctrl_data_end(req);
+	default:
+		break;
+	}
+	return false;
+}
     266c:	2000      	movs	r0, #0
     266e:	bd10      	pop	{r4, pc}
+	if (req->bmRequestType != USB_REQT_TYPE_STANDARD) {
     2670:	7813      	ldrb	r3, [r2, #0]
     2672:	2b00      	cmp	r3, #0
     2674:	d1fa      	bne.n	266c <usbdc_cb_ctl_done+0xc>
+	switch (req->bRequest) {
     2676:	7853      	ldrb	r3, [r2, #1]
     2678:	2b05      	cmp	r3, #5
     267a:	d011      	beq.n	26a0 <usbdc_cb_ctl_done+0x40>
     267c:	2b09      	cmp	r3, #9
     267e:	d1f5      	bne.n	266c <usbdc_cb_ctl_done+0xc>
+		usbdc.cfg_value = req->wValue;
     2680:	7892      	ldrb	r2, [r2, #2]
     2682:	4b12      	ldr	r3, [pc, #72]	; (26cc <usbdc_cb_ctl_done+0x6c>)
     2684:	76da      	strb	r2, [r3, #27]
+		usbdc.state     = req->wValue ? USBD_S_CONFIG : USBD_S_ADDRESS;
     2686:	78a3      	ldrb	r3, [r4, #2]
     2688:	78e1      	ldrb	r1, [r4, #3]
     268a:	0209      	lsls	r1, r1, #8
@@ -4968,13 +5224,16 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     2692:	3103      	adds	r1, #3
     2694:	4b0d      	ldr	r3, [pc, #52]	; (26cc <usbdc_cb_ctl_done+0x6c>)
     2696:	7699      	strb	r1, [r3, #26]
+		usbdc_change_notify(USBDC_C_STATE, usbdc.state);
     2698:	2001      	movs	r0, #1
     269a:	4b0d      	ldr	r3, [pc, #52]	; (26d0 <usbdc_cb_ctl_done+0x70>)
     269c:	4798      	blx	r3
     269e:	e7e5      	b.n	266c <usbdc_cb_ctl_done+0xc>
+	usb_d_set_address(addr);
     26a0:	7890      	ldrb	r0, [r2, #2]
     26a2:	4b0c      	ldr	r3, [pc, #48]	; (26d4 <usbdc_cb_ctl_done+0x74>)
     26a4:	4798      	blx	r3
+		usbdc.state = req->wValue ? USBD_S_ADDRESS : USBD_S_DEFAULT;
     26a6:	78a3      	ldrb	r3, [r4, #2]
     26a8:	78e1      	ldrb	r1, [r4, #3]
     26aa:	0209      	lsls	r1, r1, #8
@@ -4984,15 +5243,18 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     26b2:	3102      	adds	r1, #2
     26b4:	4b05      	ldr	r3, [pc, #20]	; (26cc <usbdc_cb_ctl_done+0x6c>)
     26b6:	7699      	strb	r1, [r3, #26]
+		usbdc_change_notify(USBDC_C_STATE, usbdc.state);
     26b8:	2001      	movs	r0, #1
     26ba:	4b05      	ldr	r3, [pc, #20]	; (26d0 <usbdc_cb_ctl_done+0x70>)
     26bc:	4798      	blx	r3
     26be:	e7d5      	b.n	266c <usbdc_cb_ctl_done+0xc>
+	usbdc_request_handler(0, req, USB_DATA_STAGE);
     26c0:	2201      	movs	r2, #1
     26c2:	0021      	movs	r1, r4
     26c4:	2000      	movs	r0, #0
     26c6:	4b04      	ldr	r3, [pc, #16]	; (26d8 <usbdc_cb_ctl_done+0x78>)
     26c8:	4798      	blx	r3
+		return usbdc_ctrl_data_end(req);
     26ca:	e7cf      	b.n	266c <usbdc_cb_ctl_done+0xc>
     26cc:	200004fc 	.word	0x200004fc
     26d0:	000025d5 	.word	0x000025d5
@@ -5000,33 +5262,52 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     26d8:	000025fd 	.word	0x000025fd
 
 000026dc <usbdc_reset>:
+
+/**
+ * \brief USB Device Core Reset
+ */
+void usbdc_reset(void)
+{
     26dc:	b510      	push	{r4, lr}
+	usbdc_unconfig();
     26de:	4b0d      	ldr	r3, [pc, #52]	; (2714 <usbdc_reset+0x38>)
     26e0:	4798      	blx	r3
+
+	usbdc.state       = USBD_S_DEFAULT;
     26e2:	4c0d      	ldr	r4, [pc, #52]	; (2718 <usbdc_reset+0x3c>)
     26e4:	2302      	movs	r3, #2
     26e6:	76a3      	strb	r3, [r4, #26]
+	usbdc.cfg_value   = 0;
     26e8:	2300      	movs	r3, #0
     26ea:	76e3      	strb	r3, [r4, #27]
+	usbdc.ifc_alt_map = 0;
     26ec:	7763      	strb	r3, [r4, #29]
+
+	// Setup EP0
+	usb_d_ep_deinit(0);
     26ee:	2000      	movs	r0, #0
     26f0:	4b0a      	ldr	r3, [pc, #40]	; (271c <usbdc_reset+0x40>)
     26f2:	4798      	blx	r3
+	usb_d_ep0_init(usbdc.ctrl_size);
     26f4:	7f20      	ldrb	r0, [r4, #28]
     26f6:	4b0a      	ldr	r3, [pc, #40]	; (2720 <usbdc_reset+0x44>)
     26f8:	4798      	blx	r3
+	usb_d_ep_register_callback(0, USB_D_EP_CB_SETUP, (FUNC_PTR)usbdc_cb_ctl_req);
     26fa:	4a0a      	ldr	r2, [pc, #40]	; (2724 <usbdc_reset+0x48>)
     26fc:	2100      	movs	r1, #0
     26fe:	2000      	movs	r0, #0
     2700:	4c09      	ldr	r4, [pc, #36]	; (2728 <usbdc_reset+0x4c>)
     2702:	47a0      	blx	r4
+	usb_d_ep_register_callback(0, USB_D_EP_CB_XFER, (FUNC_PTR)usbdc_cb_ctl_done);
     2704:	4a09      	ldr	r2, [pc, #36]	; (272c <usbdc_reset+0x50>)
     2706:	2102      	movs	r1, #2
     2708:	2000      	movs	r0, #0
     270a:	47a0      	blx	r4
+	usb_d_ep_enable(0);
     270c:	2000      	movs	r0, #0
     270e:	4b08      	ldr	r3, [pc, #32]	; (2730 <usbdc_reset+0x54>)
     2710:	4798      	blx	r3
+}
     2712:	bd10      	pop	{r4, pc}
     2714:	000025b5 	.word	0x000025b5
     2718:	200004fc 	.word	0x200004fc
@@ -5038,53 +5319,86 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     2730:	000007e9 	.word	0x000007e9
 
 00002734 <usbd_event_cb>:
+ * \brief Callback invoked on USB device events
+ * \param[in] ev Event code.
+ * \param[in] param Event parameter for event handling.
+ */
+static void usbd_event_cb(const enum usb_event ev, const uint32_t param)
+{
     2734:	b510      	push	{r4, lr}
+	(void)param;
+
+	switch (ev) {
     2736:	2800      	cmp	r0, #0
     2738:	d002      	beq.n	2740 <usbd_event_cb+0xc>
     273a:	2801      	cmp	r0, #1
     273c:	d004      	beq.n	2748 <usbd_event_cb+0x14>
+		break;
+
+	default:
+		break;
+	}
+}
     273e:	bd10      	pop	{r4, pc}
+		usbdc_change_notify(USBDC_C_CONN, param);
     2740:	2000      	movs	r0, #0
     2742:	4b03      	ldr	r3, [pc, #12]	; (2750 <usbd_event_cb+0x1c>)
     2744:	4798      	blx	r3
+		break;
     2746:	e7fa      	b.n	273e <usbd_event_cb+0xa>
+		usbdc_reset();
     2748:	4b02      	ldr	r3, [pc, #8]	; (2754 <usbd_event_cb+0x20>)
     274a:	4798      	blx	r3
+}
     274c:	e7f7      	b.n	273e <usbd_event_cb+0xa>
     274e:	46c0      	nop			; (mov r8, r8)
     2750:	000025d5 	.word	0x000025d5
     2754:	000026dd 	.word	0x000026dd
 
 00002758 <usbdc_xfer>:
+
+/**
+ * \brief Issue USB device transfer
+ */
+int32_t usbdc_xfer(uint8_t ep, uint8_t *buf, uint32_t size, bool zlp)
+{
     2758:	b510      	push	{r4, lr}
     275a:	b084      	sub	sp, #16
+	struct usb_d_transfer xfer = {(uint8_t *)buf, size, ep, zlp};
     275c:	ac01      	add	r4, sp, #4
     275e:	9101      	str	r1, [sp, #4]
     2760:	9202      	str	r2, [sp, #8]
     2762:	7220      	strb	r0, [r4, #8]
     2764:	7263      	strb	r3, [r4, #9]
+	return usb_d_ep_transfer(&xfer);
     2766:	0020      	movs	r0, r4
     2768:	4b01      	ldr	r3, [pc, #4]	; (2770 <usbdc_xfer+0x18>)
     276a:	4798      	blx	r3
+}
     276c:	b004      	add	sp, #16
     276e:	bd10      	pop	{r4, pc}
     2770:	00000835 	.word	0x00000835
 
 00002774 <usbdc_cb_ctl_req>:
+{
     2774:	b5f0      	push	{r4, r5, r6, r7, lr}
     2776:	46c6      	mov	lr, r8
     2778:	b500      	push	{lr}
     277a:	b084      	sub	sp, #16
     277c:	0005      	movs	r5, r0
     277e:	000c      	movs	r4, r1
+	switch (usbdc_request_handler(ep, req, USB_SETUP_STAGE)) {
     2780:	2200      	movs	r2, #0
     2782:	4bb5      	ldr	r3, [pc, #724]	; (2a58 <usbdc_cb_ctl_req+0x2e4>)
     2784:	4798      	blx	r3
     2786:	1c43      	adds	r3, r0, #1
     2788:	d00d      	beq.n	27a6 <usbdc_cb_ctl_req+0x32>
+		return true;
     278a:	2301      	movs	r3, #1
+	switch (usbdc_request_handler(ep, req, USB_SETUP_STAGE)) {
     278c:	2801      	cmp	r0, #1
     278e:	d00b      	beq.n	27a8 <usbdc_cb_ctl_req+0x34>
+	switch (req->bmRequestType & (USB_REQT_TYPE_MASK | USB_REQT_DIR_IN)) {
     2790:	7822      	ldrb	r2, [r4, #0]
     2792:	231f      	movs	r3, #31
     2794:	0011      	movs	r1, r2
@@ -5094,14 +5408,18 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     279c:	2b80      	cmp	r3, #128	; 0x80
     279e:	d100      	bne.n	27a2 <usbdc_cb_ctl_req+0x2e>
     27a0:	e0f8      	b.n	2994 <usbdc_cb_ctl_req+0x220>
+		return false;
     27a2:	2300      	movs	r3, #0
     27a4:	e000      	b.n	27a8 <usbdc_cb_ctl_req+0x34>
+		return false;
     27a6:	2300      	movs	r3, #0
+}
     27a8:	0018      	movs	r0, r3
     27aa:	b004      	add	sp, #16
     27ac:	bc04      	pop	{r2}
     27ae:	4690      	mov	r8, r2
     27b0:	bdf0      	pop	{r4, r5, r6, r7, pc}
+	switch (req->bRequest) {
     27b2:	7863      	ldrb	r3, [r4, #1]
     27b4:	2b0b      	cmp	r3, #11
     27b6:	d900      	bls.n	27ba <usbdc_cb_ctl_req+0x46>
@@ -5110,6 +5428,7 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     27bc:	49a7      	ldr	r1, [pc, #668]	; (2a5c <usbdc_cb_ctl_req+0x2e8>)
     27be:	58cb      	ldr	r3, [r1, r3]
     27c0:	469f      	mov	pc, r3
+		return (ERR_NONE == usbdc_xfer(ep, NULL, 0, true));
     27c2:	2301      	movs	r3, #1
     27c4:	2200      	movs	r2, #0
     27c6:	2100      	movs	r1, #0
@@ -5120,15 +5439,19 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     27d0:	4143      	adcs	r3, r0
     27d2:	b2db      	uxtb	r3, r3
     27d4:	e7e8      	b.n	27a8 <usbdc_cb_ctl_req+0x34>
+		if (!usbdc_set_config(req->wValue)) {
     27d6:	78a2      	ldrb	r2, [r4, #2]
+	if (cfg_value == 0) {
     27d8:	2a00      	cmp	r2, #0
     27da:	d01a      	beq.n	2812 <usbdc_cb_ctl_req+0x9e>
+		cfg_desc = usb_find_cfg_desc(usbdc.desces.ls_fs->sod, usbdc.desces.ls_fs->eod, cfg_value);
     27dc:	4ba1      	ldr	r3, [pc, #644]	; (2a64 <usbdc_cb_ctl_req+0x2f0>)
     27de:	681b      	ldr	r3, [r3, #0]
     27e0:	6859      	ldr	r1, [r3, #4]
     27e2:	6818      	ldr	r0, [r3, #0]
     27e4:	4ba0      	ldr	r3, [pc, #640]	; (2a68 <usbdc_cb_ctl_req+0x2f4>)
     27e6:	4798      	blx	r3
+	if (NULL == cfg_desc) {
     27e8:	2800      	cmp	r0, #0
     27ea:	d100      	bne.n	27ee <usbdc_cb_ctl_req+0x7a>
     27ec:	e1d4      	b.n	2b98 <usbdc_cb_ctl_req+0x424>
@@ -5136,22 +5459,29 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     27f0:	021b      	lsls	r3, r3, #8
     27f2:	7881      	ldrb	r1, [r0, #2]
     27f4:	18c9      	adds	r1, r1, r3
+	desc.eod  = cfg_desc + total_len;
     27f6:	b289      	uxth	r1, r1
     27f8:	1841      	adds	r1, r0, r1
     27fa:	9103      	str	r1, [sp, #12]
+	desc.sod  = usb_find_desc(cfg_desc, desc.eod, USB_DT_INTERFACE);
     27fc:	2204      	movs	r2, #4
     27fe:	4b9b      	ldr	r3, [pc, #620]	; (2a6c <usbdc_cb_ctl_req+0x2f8>)
     2800:	4798      	blx	r3
     2802:	9002      	str	r0, [sp, #8]
+	while (NULL != desc.sod) {
     2804:	2800      	cmp	r0, #0
     2806:	d006      	beq.n	2816 <usbdc_cb_ctl_req+0xa2>
     2808:	24ff      	movs	r4, #255	; 0xff
+			func       = (struct usbdf_driver *)usbdc.func_list.head;
     280a:	4f96      	ldr	r7, [pc, #600]	; (2a64 <usbdc_cb_ctl_req+0x2f0>)
+		desc.sod = usb_find_desc(desc.sod, desc.eod, USB_DT_INTERFACE);
     280c:	4b97      	ldr	r3, [pc, #604]	; (2a6c <usbdc_cb_ctl_req+0x2f8>)
     280e:	4698      	mov	r8, r3
     2810:	e01a      	b.n	2848 <usbdc_cb_ctl_req+0xd4>
+		usbdc_unconfig();
     2812:	4b97      	ldr	r3, [pc, #604]	; (2a70 <usbdc_cb_ctl_req+0x2fc>)
     2814:	4798      	blx	r3
+		return (ERR_NONE == usbdc_xfer(ep, NULL, 0, true));
     2816:	2301      	movs	r3, #1
     2818:	2200      	movs	r2, #0
     281a:	2100      	movs	r1, #0
@@ -5162,27 +5492,36 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     2824:	4143      	adcs	r3, r0
     2826:	b2db      	uxtb	r3, r3
     2828:	e7be      	b.n	27a8 <usbdc_cb_ctl_req+0x34>
+			last_iface = desc.sod[2];
     282a:	0034      	movs	r4, r6
     282c:	e000      	b.n	2830 <usbdc_cb_ctl_req+0xbc>
     282e:	0034      	movs	r4, r6
+		desc.sod = usb_desc_next(desc.sod);
     2830:	9802      	ldr	r0, [sp, #8]
+	return (desc + usb_desc_len(desc));
     2832:	7803      	ldrb	r3, [r0, #0]
     2834:	18c0      	adds	r0, r0, r3
     2836:	9002      	str	r0, [sp, #8]
+		desc.sod = usb_find_desc(desc.sod, desc.eod, USB_DT_INTERFACE);
     2838:	9b03      	ldr	r3, [sp, #12]
     283a:	9301      	str	r3, [sp, #4]
     283c:	2204      	movs	r2, #4
     283e:	0019      	movs	r1, r3
     2840:	47c0      	blx	r8
     2842:	9002      	str	r0, [sp, #8]
+	while (NULL != desc.sod) {
     2844:	2800      	cmp	r0, #0
     2846:	d0e6      	beq.n	2816 <usbdc_cb_ctl_req+0xa2>
+		if (last_iface != desc.sod[2] /* bInterfaceNumber */) {
     2848:	7886      	ldrb	r6, [r0, #2]
     284a:	42a6      	cmp	r6, r4
     284c:	d0f0      	beq.n	2830 <usbdc_cb_ctl_req+0xbc>
+			func       = (struct usbdf_driver *)usbdc.func_list.head;
     284e:	693c      	ldr	r4, [r7, #16]
+			while (NULL != func) {
     2850:	2c00      	cmp	r4, #0
     2852:	d0ea      	beq.n	282a <usbdc_cb_ctl_req+0xb6>
+				if (func->ctrl(func, USBDF_ENABLE, &desc)) {
     2854:	aa02      	add	r2, sp, #8
     2856:	2100      	movs	r1, #0
     2858:	0020      	movs	r0, r4
@@ -5190,62 +5529,84 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     285c:	4798      	blx	r3
     285e:	2800      	cmp	r0, #0
     2860:	d0e5      	beq.n	282e <usbdc_cb_ctl_req+0xba>
+					func = func->next;
     2862:	6824      	ldr	r4, [r4, #0]
+			while (NULL != func) {
     2864:	2c00      	cmp	r4, #0
     2866:	d1f5      	bne.n	2854 <usbdc_cb_ctl_req+0xe0>
+			last_iface = desc.sod[2];
     2868:	0034      	movs	r4, r6
     286a:	e7e1      	b.n	2830 <usbdc_cb_ctl_req+0xbc>
+	switch (req->bmRequestType & USB_REQT_RECIP_MASK) {
     286c:	231f      	movs	r3, #31
     286e:	401a      	ands	r2, r3
+		return false;
     2870:	2300      	movs	r3, #0
+	switch (req->bmRequestType & USB_REQT_RECIP_MASK) {
     2872:	2a02      	cmp	r2, #2
     2874:	d198      	bne.n	27a8 <usbdc_cb_ctl_req+0x34>
+		if (req->wLength != 0) {
     2876:	79a3      	ldrb	r3, [r4, #6]
     2878:	79e2      	ldrb	r2, [r4, #7]
     287a:	0212      	lsls	r2, r2, #8
     287c:	431a      	orrs	r2, r3
+			return false;
     287e:	2300      	movs	r3, #0
+		if (req->wLength != 0) {
     2880:	2a00      	cmp	r2, #0
     2882:	d000      	beq.n	2886 <usbdc_cb_ctl_req+0x112>
     2884:	e790      	b.n	27a8 <usbdc_cb_ctl_req+0x34>
+		usb_d_ep_halt(req->wIndex & 0xFF, USB_EP_HALT_CLR);
     2886:	7920      	ldrb	r0, [r4, #4]
     2888:	2100      	movs	r1, #0
     288a:	4b7a      	ldr	r3, [pc, #488]	; (2a74 <usbdc_cb_ctl_req+0x300>)
     288c:	4798      	blx	r3
+		usbdc_xfer(ep, NULL, 0, true);
     288e:	2301      	movs	r3, #1
     2890:	2200      	movs	r2, #0
     2892:	2100      	movs	r1, #0
     2894:	0028      	movs	r0, r5
     2896:	4c72      	ldr	r4, [pc, #456]	; (2a60 <usbdc_cb_ctl_req+0x2ec>)
     2898:	47a0      	blx	r4
+		return true;
     289a:	2301      	movs	r3, #1
     289c:	e784      	b.n	27a8 <usbdc_cb_ctl_req+0x34>
+	switch (req->bmRequestType & USB_REQT_RECIP_MASK) {
     289e:	231f      	movs	r3, #31
     28a0:	401a      	ands	r2, r3
+		return false;
     28a2:	2300      	movs	r3, #0
+	switch (req->bmRequestType & USB_REQT_RECIP_MASK) {
     28a4:	2a02      	cmp	r2, #2
     28a6:	d000      	beq.n	28aa <usbdc_cb_ctl_req+0x136>
     28a8:	e77e      	b.n	27a8 <usbdc_cb_ctl_req+0x34>
+		if (req->wLength != 0) {
     28aa:	79a3      	ldrb	r3, [r4, #6]
     28ac:	79e2      	ldrb	r2, [r4, #7]
     28ae:	0212      	lsls	r2, r2, #8
     28b0:	431a      	orrs	r2, r3
+			return false;
     28b2:	2300      	movs	r3, #0
+		if (req->wLength != 0) {
     28b4:	2a00      	cmp	r2, #0
     28b6:	d000      	beq.n	28ba <usbdc_cb_ctl_req+0x146>
     28b8:	e776      	b.n	27a8 <usbdc_cb_ctl_req+0x34>
+		usb_d_ep_halt(req->wIndex & 0xFF, USB_EP_HALT_SET);
     28ba:	7920      	ldrb	r0, [r4, #4]
     28bc:	2101      	movs	r1, #1
     28be:	4b6d      	ldr	r3, [pc, #436]	; (2a74 <usbdc_cb_ctl_req+0x300>)
     28c0:	4798      	blx	r3
+		usbdc_xfer(ep, NULL, 0, true);
     28c2:	2301      	movs	r3, #1
     28c4:	2200      	movs	r2, #0
     28c6:	2100      	movs	r1, #0
     28c8:	0028      	movs	r0, r5
     28ca:	4c65      	ldr	r4, [pc, #404]	; (2a60 <usbdc_cb_ctl_req+0x2ec>)
     28cc:	47a0      	blx	r4
+		return true;
     28ce:	2301      	movs	r3, #1
     28d0:	e76a      	b.n	27a8 <usbdc_cb_ctl_req+0x34>
+		return usbdc_set_interface(req->wValue, req->wIndex);
     28d2:	78a3      	ldrb	r3, [r4, #2]
     28d4:	78e5      	ldrb	r5, [r4, #3]
     28d6:	022d      	lsls	r5, r5, #8
@@ -5254,6 +5615,7 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     28dc:	7964      	ldrb	r4, [r4, #5]
     28de:	0224      	lsls	r4, r4, #8
     28e0:	431c      	orrs	r4, r3
+		ifc = usb_find_cfg_desc(usbdc.desces.ls_fs->sod, usbdc.desces.ls_fs->eod, usbdc.cfg_value);
     28e2:	4a60      	ldr	r2, [pc, #384]	; (2a64 <usbdc_cb_ctl_req+0x2f0>)
     28e4:	6813      	ldr	r3, [r2, #0]
     28e6:	7ed2      	ldrb	r2, [r2, #27]
@@ -5261,43 +5623,58 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     28ea:	6818      	ldr	r0, [r3, #0]
     28ec:	4b5e      	ldr	r3, [pc, #376]	; (2a68 <usbdc_cb_ctl_req+0x2f4>)
     28ee:	4798      	blx	r3
+	if (NULL == ifc) {
     28f0:	2800      	cmp	r0, #0
     28f2:	d047      	beq.n	2984 <usbdc_cb_ctl_req+0x210>
+	desc.sod = ifc;
     28f4:	9002      	str	r0, [sp, #8]
+	return (ptr[0] + (ptr[1] << 8));
     28f6:	78c3      	ldrb	r3, [r0, #3]
     28f8:	021b      	lsls	r3, r3, #8
     28fa:	7881      	ldrb	r1, [r0, #2]
     28fc:	18c9      	adds	r1, r1, r3
+	desc.eod = ifc + usb_cfg_desc_total_len(ifc);
     28fe:	b289      	uxth	r1, r1
     2900:	1841      	adds	r1, r0, r1
     2902:	9103      	str	r1, [sp, #12]
+	if (NULL == (ifc = usb_find_desc(desc.sod, desc.eod, USB_DT_INTERFACE))) {
     2904:	2204      	movs	r2, #4
     2906:	4b59      	ldr	r3, [pc, #356]	; (2a6c <usbdc_cb_ctl_req+0x2f8>)
     2908:	4798      	blx	r3
     290a:	2800      	cmp	r0, #0
     290c:	d03c      	beq.n	2988 <usbdc_cb_ctl_req+0x214>
+		ifc      = usb_find_desc(desc.sod, desc.eod, USB_DT_INTERFACE);
     290e:	4e57      	ldr	r6, [pc, #348]	; (2a6c <usbdc_cb_ctl_req+0x2f8>)
     2910:	e008      	b.n	2924 <usbdc_cb_ctl_req+0x1b0>
+		desc.sod = usb_desc_next(desc.sod);
     2912:	9802      	ldr	r0, [sp, #8]
+	return (desc + usb_desc_len(desc));
     2914:	7803      	ldrb	r3, [r0, #0]
     2916:	18c0      	adds	r0, r0, r3
     2918:	9002      	str	r0, [sp, #8]
+		ifc      = usb_find_desc(desc.sod, desc.eod, USB_DT_INTERFACE);
     291a:	2204      	movs	r2, #4
     291c:	9903      	ldr	r1, [sp, #12]
     291e:	47b0      	blx	r6
+		if (NULL == ifc) {
     2920:	2800      	cmp	r0, #0
     2922:	d033      	beq.n	298c <usbdc_cb_ctl_req+0x218>
+	while (ifc[2] != ifc_id || ifc[3] != alt_set) {
     2924:	7883      	ldrb	r3, [r0, #2]
     2926:	42a3      	cmp	r3, r4
     2928:	d1f3      	bne.n	2912 <usbdc_cb_ctl_req+0x19e>
     292a:	78c3      	ldrb	r3, [r0, #3]
     292c:	42ab      	cmp	r3, r5
     292e:	d1f0      	bne.n	2912 <usbdc_cb_ctl_req+0x19e>
+	desc.sod = ifc;
     2930:	9002      	str	r0, [sp, #8]
+	func     = (struct usbdf_driver *)usbdc.func_list.head;
     2932:	4b4c      	ldr	r3, [pc, #304]	; (2a64 <usbdc_cb_ctl_req+0x2f0>)
     2934:	691e      	ldr	r6, [r3, #16]
+	while (NULL != func) {
     2936:	2e00      	cmp	r6, #0
     2938:	d02a      	beq.n	2990 <usbdc_cb_ctl_req+0x21c>
+		if (func->ctrl(func, USBDF_DISABLE, &desc)) {
     293a:	aa02      	add	r2, sp, #8
     293c:	2101      	movs	r1, #1
     293e:	0030      	movs	r0, r6
@@ -5305,44 +5682,59 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     2942:	4798      	blx	r3
     2944:	2800      	cmp	r0, #0
     2946:	d004      	beq.n	2952 <usbdc_cb_ctl_req+0x1de>
+			func = func->next;
     2948:	6836      	ldr	r6, [r6, #0]
+	while (NULL != func) {
     294a:	2e00      	cmp	r6, #0
     294c:	d1f5      	bne.n	293a <usbdc_cb_ctl_req+0x1c6>
+	return false;
     294e:	2300      	movs	r3, #0
     2950:	e72a      	b.n	27a8 <usbdc_cb_ctl_req+0x34>
+		} else if (ERR_NONE == func->ctrl(func, USBDF_ENABLE, &desc)) {
     2952:	6873      	ldr	r3, [r6, #4]
     2954:	aa02      	add	r2, sp, #8
     2956:	2100      	movs	r1, #0
     2958:	0030      	movs	r0, r6
     295a:	4798      	blx	r3
+			return false;
     295c:	2300      	movs	r3, #0
+		} else if (ERR_NONE == func->ctrl(func, USBDF_ENABLE, &desc)) {
     295e:	2800      	cmp	r0, #0
     2960:	d000      	beq.n	2964 <usbdc_cb_ctl_req+0x1f0>
     2962:	e721      	b.n	27a8 <usbdc_cb_ctl_req+0x34>
+			if (alt_set) {
     2964:	2d00      	cmp	r5, #0
     2966:	d005      	beq.n	2974 <usbdc_cb_ctl_req+0x200>
+				usbdc.ifc_alt_map |= 1 << ifc_id;
     2968:	493e      	ldr	r1, [pc, #248]	; (2a64 <usbdc_cb_ctl_req+0x2f0>)
     296a:	2201      	movs	r2, #1
     296c:	40a2      	lsls	r2, r4
     296e:	7f4b      	ldrb	r3, [r1, #29]
     2970:	4313      	orrs	r3, r2
     2972:	774b      	strb	r3, [r1, #29]
+			usbdc_xfer(0, NULL, 0, 0);
     2974:	2300      	movs	r3, #0
     2976:	2200      	movs	r2, #0
     2978:	2100      	movs	r1, #0
     297a:	2000      	movs	r0, #0
     297c:	4c38      	ldr	r4, [pc, #224]	; (2a60 <usbdc_cb_ctl_req+0x2ec>)
     297e:	47a0      	blx	r4
+			return true;
     2980:	2301      	movs	r3, #1
     2982:	e711      	b.n	27a8 <usbdc_cb_ctl_req+0x34>
+		return false;
     2984:	2300      	movs	r3, #0
     2986:	e70f      	b.n	27a8 <usbdc_cb_ctl_req+0x34>
+		return false;
     2988:	2300      	movs	r3, #0
     298a:	e70d      	b.n	27a8 <usbdc_cb_ctl_req+0x34>
+			return false;
     298c:	2300      	movs	r3, #0
     298e:	e70b      	b.n	27a8 <usbdc_cb_ctl_req+0x34>
+	return false;
     2990:	2300      	movs	r3, #0
     2992:	e709      	b.n	27a8 <usbdc_cb_ctl_req+0x34>
+	switch (req->bRequest) {
     2994:	7863      	ldrb	r3, [r4, #1]
     2996:	2b06      	cmp	r3, #6
     2998:	d033      	beq.n	2a02 <usbdc_cb_ctl_req+0x28e>
@@ -5355,6 +5747,7 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     29a6:	2b0a      	cmp	r3, #10
     29a8:	d000      	beq.n	29ac <usbdc_cb_ctl_req+0x238>
     29aa:	e0ed      	b.n	2b88 <usbdc_cb_ctl_req+0x414>
+	if (!(usbdc.ifc_alt_map & (1 << req->wIndex))) {
     29ac:	4b2d      	ldr	r3, [pc, #180]	; (2a64 <usbdc_cb_ctl_req+0x2f0>)
     29ae:	7f5a      	ldrb	r2, [r3, #29]
     29b0:	7921      	ldrb	r1, [r4, #4]
@@ -5365,12 +5758,16 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     29ba:	07d3      	lsls	r3, r2, #31
     29bc:	d400      	bmi.n	29c0 <usbdc_cb_ctl_req+0x24c>
     29be:	e0ca      	b.n	2b56 <usbdc_cb_ctl_req+0x3e2>
+	struct usbdf_driver *func = (struct usbdf_driver *)usbdc.func_list.head;
     29c0:	4b28      	ldr	r3, [pc, #160]	; (2a64 <usbdc_cb_ctl_req+0x2f0>)
     29c2:	691d      	ldr	r5, [r3, #16]
+	return false;
     29c4:	2300      	movs	r3, #0
+	while (NULL != func) {
     29c6:	2d00      	cmp	r5, #0
     29c8:	d100      	bne.n	29cc <usbdc_cb_ctl_req+0x258>
     29ca:	e6ed      	b.n	27a8 <usbdc_cb_ctl_req+0x34>
+		if (0 > (rc = func->ctrl(func, USBDF_GET_IFACE, req))) {
     29cc:	0022      	movs	r2, r4
     29ce:	2102      	movs	r1, #2
     29d0:	0028      	movs	r0, r5
@@ -5379,14 +5776,19 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     29d6:	2800      	cmp	r0, #0
     29d8:	db00      	blt.n	29dc <usbdc_cb_ctl_req+0x268>
     29da:	e0c8      	b.n	2b6e <usbdc_cb_ctl_req+0x3fa>
+			func = func->next;
     29dc:	682d      	ldr	r5, [r5, #0]
+	while (NULL != func) {
     29de:	2d00      	cmp	r5, #0
     29e0:	d1f4      	bne.n	29cc <usbdc_cb_ctl_req+0x258>
+	return false;
     29e2:	2300      	movs	r3, #0
     29e4:	e6e0      	b.n	27a8 <usbdc_cb_ctl_req+0x34>
+	switch (req->bRequest) {
     29e6:	2b00      	cmp	r3, #0
     29e8:	d000      	beq.n	29ec <usbdc_cb_ctl_req+0x278>
     29ea:	e0cd      	b.n	2b88 <usbdc_cb_ctl_req+0x414>
+	switch (req->bmRequestType & USB_REQT_RECIP_MASK) {
     29ec:	231f      	movs	r3, #31
     29ee:	401a      	ands	r2, r3
     29f0:	b2d3      	uxtb	r3, r2
@@ -5396,21 +5798,26 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     29f8:	2a02      	cmp	r2, #2
     29fa:	d100      	bne.n	29fe <usbdc_cb_ctl_req+0x28a>
     29fc:	e09f      	b.n	2b3e <usbdc_cb_ctl_req+0x3ca>
+		return false;
     29fe:	2300      	movs	r3, #0
     2a00:	e6d2      	b.n	27a8 <usbdc_cb_ctl_req+0x34>
+	uint8_t type = (uint8_t)(req->wValue >> 8);
     2a02:	78a3      	ldrb	r3, [r4, #2]
     2a04:	78e2      	ldrb	r2, [r4, #3]
     2a06:	0212      	lsls	r2, r2, #8
     2a08:	431a      	orrs	r2, r3
     2a0a:	0a13      	lsrs	r3, r2, #8
+	switch (type) {
     2a0c:	2b02      	cmp	r3, #2
     2a0e:	d033      	beq.n	2a78 <usbdc_cb_ctl_req+0x304>
     2a10:	2b03      	cmp	r3, #3
     2a12:	d056      	beq.n	2ac2 <usbdc_cb_ctl_req+0x34e>
     2a14:	2b01      	cmp	r3, #1
     2a16:	d001      	beq.n	2a1c <usbdc_cb_ctl_req+0x2a8>
+	return false;
     2a18:	2300      	movs	r3, #0
     2a1a:	e6c5      	b.n	27a8 <usbdc_cb_ctl_req+0x34>
+	uint16_t length   = req->wLength;
     2a1c:	79a2      	ldrb	r2, [r4, #6]
     2a1e:	79e3      	ldrb	r3, [r4, #7]
     2a20:	021b      	lsls	r3, r3, #8
@@ -5420,6 +5827,7 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     2a28:	d900      	bls.n	2a2c <usbdc_cb_ctl_req+0x2b8>
     2a2a:	2212      	movs	r2, #18
     2a2c:	b294      	uxth	r4, r2
+		dev_desc = usb_find_desc(usbdc.desces.ls_fs->sod, usbdc.desces.ls_fs->eod, USB_DT_DEVICE);
     2a2e:	4b0d      	ldr	r3, [pc, #52]	; (2a64 <usbdc_cb_ctl_req+0x2f0>)
     2a30:	681b      	ldr	r3, [r3, #0]
     2a32:	6859      	ldr	r1, [r3, #4]
@@ -5427,9 +5835,11 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     2a36:	2201      	movs	r2, #1
     2a38:	4b0c      	ldr	r3, [pc, #48]	; (2a6c <usbdc_cb_ctl_req+0x2f8>)
     2a3a:	4798      	blx	r3
+	if (!dev_desc) {
     2a3c:	2800      	cmp	r0, #0
     2a3e:	d100      	bne.n	2a42 <usbdc_cb_ctl_req+0x2ce>
     2a40:	e0a4      	b.n	2b8c <usbdc_cb_ctl_req+0x418>
+	if (ERR_NONE != usbdc_xfer(ep, dev_desc, length, false)) {
     2a42:	2300      	movs	r3, #0
     2a44:	0022      	movs	r2, r4
     2a46:	0001      	movs	r1, r0
@@ -5449,12 +5859,15 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     2a6c:	00002cc5 	.word	0x00002cc5
     2a70:	000025b5 	.word	0x000025b5
     2a74:	0000095d 	.word	0x0000095d
+	uint16_t length   = req->wLength;
     2a78:	79a3      	ldrb	r3, [r4, #6]
     2a7a:	79e6      	ldrb	r6, [r4, #7]
     2a7c:	0236      	lsls	r6, r6, #8
     2a7e:	431e      	orrs	r6, r3
+	bool     need_zlp = !(length & (usbdc.ctrl_size - 1));
     2a80:	4b46      	ldr	r3, [pc, #280]	; (2b9c <usbdc_cb_ctl_req+0x428>)
     2a82:	7f1f      	ldrb	r7, [r3, #28]
+		cfg_desc = usb_find_cfg_desc(usbdc.desces.ls_fs->sod, usbdc.desces.ls_fs->eod, index + 1);
     2a84:	681b      	ldr	r3, [r3, #0]
     2a86:	3201      	adds	r2, #1
     2a88:	b2d2      	uxtb	r2, r2
@@ -5463,21 +5876,28 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     2a8e:	4b44      	ldr	r3, [pc, #272]	; (2ba0 <usbdc_cb_ctl_req+0x42c>)
     2a90:	4798      	blx	r3
     2a92:	1e01      	subs	r1, r0, #0
+	if (NULL == cfg_desc) {
     2a94:	d07c      	beq.n	2b90 <usbdc_cb_ctl_req+0x41c>
+	return (ptr[0] + (ptr[1] << 8));
     2a96:	78c3      	ldrb	r3, [r0, #3]
     2a98:	021b      	lsls	r3, r3, #8
     2a9a:	7884      	ldrb	r4, [r0, #2]
     2a9c:	18e4      	adds	r4, r4, r3
     2a9e:	b2a4      	uxth	r4, r4
+		need_zlp = false;
     2aa0:	2300      	movs	r3, #0
+	if (length <= total_len) {
     2aa2:	42a6      	cmp	r6, r4
     2aa4:	d905      	bls.n	2ab2 <usbdc_cb_ctl_req+0x33e>
+	bool     need_zlp = !(length & (usbdc.ctrl_size - 1));
     2aa6:	3f01      	subs	r7, #1
     2aa8:	403e      	ands	r6, r7
     2aaa:	4273      	negs	r3, r6
     2aac:	4173      	adcs	r3, r6
     2aae:	b2db      	uxtb	r3, r3
+		length = total_len;
     2ab0:	0026      	movs	r6, r4
+	if (ERR_NONE != usbdc_xfer(ep, cfg_desc, length, need_zlp)) {
     2ab2:	0032      	movs	r2, r6
     2ab4:	0028      	movs	r0, r5
     2ab6:	4c3b      	ldr	r4, [pc, #236]	; (2ba4 <usbdc_cb_ctl_req+0x430>)
@@ -5486,13 +5906,16 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     2abc:	4143      	adcs	r3, r0
     2abe:	b2db      	uxtb	r3, r3
     2ac0:	e672      	b.n	27a8 <usbdc_cb_ctl_req+0x34>
+	uint16_t length   = req->wLength;
     2ac2:	79a3      	ldrb	r3, [r4, #6]
     2ac4:	79e1      	ldrb	r1, [r4, #7]
     2ac6:	0209      	lsls	r1, r1, #8
     2ac8:	4319      	orrs	r1, r3
     2aca:	000c      	movs	r4, r1
+	bool     need_zlp = !(length & (usbdc.ctrl_size - 1));
     2acc:	4b33      	ldr	r3, [pc, #204]	; (2b9c <usbdc_cb_ctl_req+0x428>)
     2ace:	7f1e      	ldrb	r6, [r3, #28]
+	str_desc = usb_find_str_desc(usbdc.desces.ls_fs->sod, usbdc.desces.ls_fs->eod, index);
     2ad0:	681b      	ldr	r3, [r3, #0]
     2ad2:	b2d2      	uxtb	r2, r2
     2ad4:	6859      	ldr	r1, [r3, #4]
@@ -5500,18 +5923,25 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     2ad8:	4b33      	ldr	r3, [pc, #204]	; (2ba8 <usbdc_cb_ctl_req+0x434>)
     2ada:	4798      	blx	r3
     2adc:	1e01      	subs	r1, r0, #0
+	if (NULL == str_desc) {
     2ade:	d059      	beq.n	2b94 <usbdc_cb_ctl_req+0x420>
+	if (length <= str_desc[0]) {
     2ae0:	7802      	ldrb	r2, [r0, #0]
+		need_zlp = false;
     2ae2:	2300      	movs	r3, #0
+	if (length <= str_desc[0]) {
     2ae4:	4294      	cmp	r4, r2
     2ae6:	d906      	bls.n	2af6 <usbdc_cb_ctl_req+0x382>
+	bool     need_zlp = !(length & (usbdc.ctrl_size - 1));
     2ae8:	1e73      	subs	r3, r6, #1
     2aea:	4023      	ands	r3, r4
     2aec:	0018      	movs	r0, r3
     2aee:	4243      	negs	r3, r0
     2af0:	4143      	adcs	r3, r0
     2af2:	b2db      	uxtb	r3, r3
+		length = str_desc[0];
     2af4:	0014      	movs	r4, r2
+	if (ERR_NONE != usbdc_xfer(ep, str_desc, length, need_zlp)) {
     2af6:	0022      	movs	r2, r4
     2af8:	0028      	movs	r0, r5
     2afa:	4c2a      	ldr	r4, [pc, #168]	; (2ba4 <usbdc_cb_ctl_req+0x430>)
@@ -5520,79 +5950,102 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     2b00:	4143      	adcs	r3, r0
     2b02:	b2db      	uxtb	r3, r3
     2b04:	e650      	b.n	27a8 <usbdc_cb_ctl_req+0x34>
+		*(uint8_t *)usbdc.ctrl_buf = usbdc.cfg_value;
     2b06:	4b25      	ldr	r3, [pc, #148]	; (2b9c <usbdc_cb_ctl_req+0x428>)
     2b08:	7eda      	ldrb	r2, [r3, #27]
     2b0a:	6959      	ldr	r1, [r3, #20]
     2b0c:	700a      	strb	r2, [r1, #0]
+		usbdc_xfer(ep, usbdc.ctrl_buf, 1, false);
     2b0e:	6959      	ldr	r1, [r3, #20]
     2b10:	2300      	movs	r3, #0
     2b12:	2201      	movs	r2, #1
     2b14:	0028      	movs	r0, r5
     2b16:	4c23      	ldr	r4, [pc, #140]	; (2ba4 <usbdc_cb_ctl_req+0x430>)
     2b18:	47a0      	blx	r4
+		return true;
     2b1a:	2301      	movs	r3, #1
     2b1c:	e644      	b.n	27a8 <usbdc_cb_ctl_req+0x34>
+		st = 0;
     2b1e:	2300      	movs	r3, #0
     2b20:	9302      	str	r3, [sp, #8]
+	memcpy(usbdc.ctrl_buf, &st, 2);
     2b22:	4c1e      	ldr	r4, [pc, #120]	; (2b9c <usbdc_cb_ctl_req+0x428>)
     2b24:	2202      	movs	r2, #2
     2b26:	a902      	add	r1, sp, #8
     2b28:	6960      	ldr	r0, [r4, #20]
     2b2a:	4b20      	ldr	r3, [pc, #128]	; (2bac <usbdc_cb_ctl_req+0x438>)
     2b2c:	4798      	blx	r3
+	usbdc_xfer(ep, usbdc.ctrl_buf, 2, false);
     2b2e:	6961      	ldr	r1, [r4, #20]
     2b30:	2300      	movs	r3, #0
     2b32:	2202      	movs	r2, #2
     2b34:	0028      	movs	r0, r5
     2b36:	4c1b      	ldr	r4, [pc, #108]	; (2ba4 <usbdc_cb_ctl_req+0x430>)
     2b38:	47a0      	blx	r4
+	return true;
     2b3a:	2301      	movs	r3, #1
     2b3c:	e634      	b.n	27a8 <usbdc_cb_ctl_req+0x34>
+		st = usb_d_ep_halt(req->wIndex & 0xFF, USB_EP_HALT_GET);
     2b3e:	7920      	ldrb	r0, [r4, #4]
     2b40:	2102      	movs	r1, #2
     2b42:	4b1b      	ldr	r3, [pc, #108]	; (2bb0 <usbdc_cb_ctl_req+0x43c>)
     2b44:	4798      	blx	r3
+		if (st < 0) {
     2b46:	2800      	cmp	r0, #0
     2b48:	db03      	blt.n	2b52 <usbdc_cb_ctl_req+0x3de>
+		st = st & 0x1;
     2b4a:	2301      	movs	r3, #1
     2b4c:	4018      	ands	r0, r3
     2b4e:	9002      	str	r0, [sp, #8]
     2b50:	e7e7      	b.n	2b22 <usbdc_cb_ctl_req+0x3ae>
+			return false;
     2b52:	2300      	movs	r3, #0
     2b54:	e628      	b.n	27a8 <usbdc_cb_ctl_req+0x34>
+		usbdc.ctrl_buf[0] = 0;
     2b56:	4b11      	ldr	r3, [pc, #68]	; (2b9c <usbdc_cb_ctl_req+0x428>)
     2b58:	2200      	movs	r2, #0
     2b5a:	6959      	ldr	r1, [r3, #20]
     2b5c:	700a      	strb	r2, [r1, #0]
+		usbdc_xfer(0, usbdc.ctrl_buf, 1, false);
     2b5e:	6959      	ldr	r1, [r3, #20]
     2b60:	2300      	movs	r3, #0
     2b62:	3201      	adds	r2, #1
     2b64:	2000      	movs	r0, #0
     2b66:	4c0f      	ldr	r4, [pc, #60]	; (2ba4 <usbdc_cb_ctl_req+0x430>)
     2b68:	47a0      	blx	r4
+		return true;
     2b6a:	2301      	movs	r3, #1
     2b6c:	e61c      	b.n	27a8 <usbdc_cb_ctl_req+0x34>
+			usbdc.ctrl_buf[0] = (uint8_t)rc;
     2b6e:	4b0b      	ldr	r3, [pc, #44]	; (2b9c <usbdc_cb_ctl_req+0x428>)
     2b70:	695a      	ldr	r2, [r3, #20]
     2b72:	7010      	strb	r0, [r2, #0]
+			usbdc_xfer(0, usbdc.ctrl_buf, 1, false);
     2b74:	6959      	ldr	r1, [r3, #20]
     2b76:	2300      	movs	r3, #0
     2b78:	2201      	movs	r2, #1
     2b7a:	2000      	movs	r0, #0
     2b7c:	4c09      	ldr	r4, [pc, #36]	; (2ba4 <usbdc_cb_ctl_req+0x430>)
     2b7e:	47a0      	blx	r4
+			return true;
     2b80:	2301      	movs	r3, #1
     2b82:	e611      	b.n	27a8 <usbdc_cb_ctl_req+0x34>
+		return false;
     2b84:	2300      	movs	r3, #0
     2b86:	e60f      	b.n	27a8 <usbdc_cb_ctl_req+0x34>
+		return false;
     2b88:	2300      	movs	r3, #0
     2b8a:	e60d      	b.n	27a8 <usbdc_cb_ctl_req+0x34>
+		return false;
     2b8c:	2300      	movs	r3, #0
     2b8e:	e60b      	b.n	27a8 <usbdc_cb_ctl_req+0x34>
+		return false;
     2b90:	2300      	movs	r3, #0
     2b92:	e609      	b.n	27a8 <usbdc_cb_ctl_req+0x34>
+		return false;
     2b94:	2300      	movs	r3, #0
     2b96:	e607      	b.n	27a8 <usbdc_cb_ctl_req+0x34>
+			return false;
     2b98:	2300      	movs	r3, #0
     2b9a:	e605      	b.n	27a8 <usbdc_cb_ctl_req+0x34>
     2b9c:	200004fc 	.word	0x200004fc
@@ -5603,36 +6056,62 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     2bb0:	0000095d 	.word	0x0000095d
 
 00002bb4 <usbdc_register_handler>:
+
+/**
+ * \brief Register the handler
+ */
+void usbdc_register_handler(enum usbdc_handler_type type, const struct usbdc_handler *h)
+{
     2bb4:	b510      	push	{r4, lr}
+	switch (type) {
     2bb6:	2801      	cmp	r0, #1
     2bb8:	d009      	beq.n	2bce <usbdc_register_handler+0x1a>
     2bba:	2800      	cmp	r0, #0
     2bbc:	d002      	beq.n	2bc4 <usbdc_register_handler+0x10>
     2bbe:	2802      	cmp	r0, #2
     2bc0:	d00a      	beq.n	2bd8 <usbdc_register_handler+0x24>
+		list_insert_at_end(&usbdc.handlers.change_list, (void *)h);
+		break;
+	default:
+		break;
+	}
+}
     2bc2:	bd10      	pop	{r4, pc}
+		list_insert_at_end(&usbdc.handlers.sof_list, (void *)h);
     2bc4:	4807      	ldr	r0, [pc, #28]	; (2be4 <usbdc_register_handler+0x30>)
     2bc6:	3004      	adds	r0, #4
     2bc8:	4b07      	ldr	r3, [pc, #28]	; (2be8 <usbdc_register_handler+0x34>)
     2bca:	4798      	blx	r3
+		break;
     2bcc:	e7f9      	b.n	2bc2 <usbdc_register_handler+0xe>
+		list_insert_at_end(&usbdc.handlers.req_list, (void *)h);
     2bce:	4805      	ldr	r0, [pc, #20]	; (2be4 <usbdc_register_handler+0x30>)
     2bd0:	3008      	adds	r0, #8
     2bd2:	4b05      	ldr	r3, [pc, #20]	; (2be8 <usbdc_register_handler+0x34>)
     2bd4:	4798      	blx	r3
+		break;
     2bd6:	e7f4      	b.n	2bc2 <usbdc_register_handler+0xe>
+		list_insert_at_end(&usbdc.handlers.change_list, (void *)h);
     2bd8:	4802      	ldr	r0, [pc, #8]	; (2be4 <usbdc_register_handler+0x30>)
     2bda:	300c      	adds	r0, #12
     2bdc:	4b02      	ldr	r3, [pc, #8]	; (2be8 <usbdc_register_handler+0x34>)
     2bde:	4798      	blx	r3
+}
     2be0:	e7ef      	b.n	2bc2 <usbdc_register_handler+0xe>
     2be2:	46c0      	nop			; (mov r8, r8)
     2be4:	200004fc 	.word	0x200004fc
     2be8:	00000a41 	.word	0x00000a41
 
 00002bec <usbdc_init>:
+
+/**
+ * \brief Initialize the USB device core driver
+ */
+int32_t usbdc_init(uint8_t *ctrl_buf)
+{
     2bec:	b570      	push	{r4, r5, r6, lr}
     2bee:	0004      	movs	r4, r0
+	ASSERT(ctrl_buf);
     2bf0:	1e43      	subs	r3, r0, #1
     2bf2:	4198      	sbcs	r0, r3
     2bf4:	b2c0      	uxtb	r0, r0
@@ -5640,25 +6119,40 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     2bf8:	490c      	ldr	r1, [pc, #48]	; (2c2c <usbdc_init+0x40>)
     2bfa:	4b0d      	ldr	r3, [pc, #52]	; (2c30 <usbdc_init+0x44>)
     2bfc:	4798      	blx	r3
+
+	int32_t rc;
+
+	rc = usb_d_init();
     2bfe:	4b0d      	ldr	r3, [pc, #52]	; (2c34 <usbdc_init+0x48>)
     2c00:	4798      	blx	r3
+	if (rc < 0) {
     2c02:	2800      	cmp	r0, #0
     2c04:	db0e      	blt.n	2c24 <usbdc_init+0x38>
+		return rc;
+	}
+
+	memset(&usbdc, 0, sizeof(usbdc));
     2c06:	4d0c      	ldr	r5, [pc, #48]	; (2c38 <usbdc_init+0x4c>)
     2c08:	2220      	movs	r2, #32
     2c0a:	2100      	movs	r1, #0
     2c0c:	0028      	movs	r0, r5
     2c0e:	4b0b      	ldr	r3, [pc, #44]	; (2c3c <usbdc_init+0x50>)
     2c10:	4798      	blx	r3
+	usbdc.ctrl_buf = ctrl_buf;
     2c12:	616c      	str	r4, [r5, #20]
+	usb_d_register_callback(USB_D_CB_SOF, (FUNC_PTR)usbd_sof_cb);
     2c14:	490a      	ldr	r1, [pc, #40]	; (2c40 <usbdc_init+0x54>)
     2c16:	2000      	movs	r0, #0
     2c18:	4c0a      	ldr	r4, [pc, #40]	; (2c44 <usbdc_init+0x58>)
     2c1a:	47a0      	blx	r4
+	usb_d_register_callback(USB_D_CB_EVENT, (FUNC_PTR)usbd_event_cb);
     2c1c:	490a      	ldr	r1, [pc, #40]	; (2c48 <usbdc_init+0x5c>)
     2c1e:	2001      	movs	r0, #1
     2c20:	47a0      	blx	r4
+
+	return 0;
     2c22:	2000      	movs	r0, #0
+}
     2c24:	bd70      	pop	{r4, r5, r6, pc}
     2c26:	46c0      	nop			; (mov r8, r8)
     2c28:	00000355 	.word	0x00000355
@@ -5672,39 +6166,71 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     2c48:	00002735 	.word	0x00002735
 
 00002c4c <usbdc_register_function>:
+ * \brief Register/unregister function support of a USB device function
+ *
+ * Must be invoked when USB device is stopped.
+ */
+void usbdc_register_function(struct usbdf_driver *func)
+{
     2c4c:	b510      	push	{r4, lr}
     2c4e:	0001      	movs	r1, r0
+	list_insert_at_end(&usbdc.func_list, func);
     2c50:	4802      	ldr	r0, [pc, #8]	; (2c5c <usbdc_register_function+0x10>)
     2c52:	3010      	adds	r0, #16
     2c54:	4b02      	ldr	r3, [pc, #8]	; (2c60 <usbdc_register_function+0x14>)
     2c56:	4798      	blx	r3
+}
     2c58:	bd10      	pop	{r4, pc}
     2c5a:	46c0      	nop			; (mov r8, r8)
     2c5c:	200004fc 	.word	0x200004fc
     2c60:	00000a41 	.word	0x00000a41
 
 00002c64 <usbdc_start>:
+
+/**
+ * \brief Start the USB device driver with specific descriptors set
+ */
+int32_t usbdc_start(struct usbd_descriptors *desces)
+{
     2c64:	b510      	push	{r4, lr}
+	if (usbdc.state >= USBD_S_POWER) {
     2c66:	4b0b      	ldr	r3, [pc, #44]	; (2c94 <usbdc_start+0x30>)
     2c68:	7e9b      	ldrb	r3, [r3, #26]
     2c6a:	2b00      	cmp	r3, #0
     2c6c:	d10c      	bne.n	2c88 <usbdc_start+0x24>
+		return ERR_BUSY;
+	}
+
+	if (desces) {
     2c6e:	2800      	cmp	r0, #0
     2c70:	d00d      	beq.n	2c8e <usbdc_start+0x2a>
+		usbdc.desces.ls_fs = desces;
     2c72:	4b08      	ldr	r3, [pc, #32]	; (2c94 <usbdc_start+0x30>)
     2c74:	6018      	str	r0, [r3, #0]
+#endif
+	} else {
+		return ERR_BAD_DATA;
+	}
+
+	usbdc.ctrl_size = desces->sod[7];
     2c76:	6802      	ldr	r2, [r0, #0]
     2c78:	79d2      	ldrb	r2, [r2, #7]
     2c7a:	771a      	strb	r2, [r3, #28]
+	usbdc.state     = USBD_S_POWER;
     2c7c:	2201      	movs	r2, #1
     2c7e:	769a      	strb	r2, [r3, #26]
+	usb_d_enable();
     2c80:	4b05      	ldr	r3, [pc, #20]	; (2c98 <usbdc_start+0x34>)
     2c82:	4798      	blx	r3
+	return ERR_NONE;
     2c84:	2000      	movs	r0, #0
+}
     2c86:	bd10      	pop	{r4, pc}
+		return ERR_BUSY;
     2c88:	2004      	movs	r0, #4
     2c8a:	4240      	negs	r0, r0
     2c8c:	e7fb      	b.n	2c86 <usbdc_start+0x22>
+		return ERR_BAD_DATA;
     2c8e:	2009      	movs	r0, #9
     2c90:	4240      	negs	r0, r0
     2c92:	e7f8      	b.n	2c86 <usbdc_start+0x22>
@@ -5712,25 +6238,50 @@ static inline hri_port_in_reg_t hri_port_read_IN_reg(const void *const hw, uint8
     2c98:	00000731 	.word	0x00000731
 
 00002c9c <usbdc_attach>:
+
+/**
+ * \brief Attach the USB device to host
+ */
+void usbdc_attach(void)
+{
     2c9c:	b510      	push	{r4, lr}
+	usb_d_attach();
     2c9e:	4b01      	ldr	r3, [pc, #4]	; (2ca4 <usbdc_attach+0x8>)
     2ca0:	4798      	blx	r3
+}
     2ca2:	bd10      	pop	{r4, pc}
     2ca4:	0000073d 	.word	0x0000073d
 
 00002ca8 <usbdc_get_ctrl_buffer>:
+/**
+ * \brief Return USB Device endpoint0 buffer
+ */
+uint8_t *usbdc_get_ctrl_buffer(void)
+{
+	return usbdc.ctrl_buf;
     2ca8:	4b01      	ldr	r3, [pc, #4]	; (2cb0 <usbdc_get_ctrl_buffer+0x8>)
     2caa:	6958      	ldr	r0, [r3, #20]
+}
     2cac:	4770      	bx	lr
     2cae:	46c0      	nop			; (mov r8, r8)
     2cb0:	200004fc 	.word	0x200004fc
 
 00002cb4 <usbdc_get_state>:
+/**
+ * \brief Return current USB state
+ */
+uint8_t usbdc_get_state(void)
+{
+	if (usbdc.state & USBD_S_SUSPEND) {
     2cb4:	4b02      	ldr	r3, [pc, #8]	; (2cc0 <usbdc_get_state+0xc>)
     2cb6:	7e98      	ldrb	r0, [r3, #26]
     2cb8:	06c3      	lsls	r3, r0, #27
     2cba:	d500      	bpl.n	2cbe <usbdc_get_state+0xa>
+		return USBD_S_SUSPEND;
     2cbc:	2010      	movs	r0, #16
+	}
+	return usbdc.state;
+}
     2cbe:	4770      	bx	lr
     2cc0:	200004fc 	.word	0x200004fc
 

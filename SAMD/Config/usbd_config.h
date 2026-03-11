@@ -74,7 +74,7 @@
 // <e> Enable string descriptor of iManufact
 // <id> usb_cdcd_acm_imanufact_en
 #ifndef CONF_USB_CDCD_ACM_IMANUFACT_EN
-#define CONF_USB_CDCD_ACM_IMANUFACT_EN 0
+#define CONF_USB_CDCD_ACM_IMANUFACT_EN 1
 #endif
 
 #ifndef CONF_USB_CDCD_ACM_IMANUFACT
@@ -84,7 +84,7 @@
 // <s> Unicode string of iManufact
 // <id> usb_cdcd_acm_imanufact_str
 #ifndef CONF_USB_CDCD_ACM_IMANUFACT_STR
-#define CONF_USB_CDCD_ACM_IMANUFACT_STR "Atmel"
+#define CONF_USB_CDCD_ACM_IMANUFACT_STR "Montana Tech"
 #endif
 
 #ifndef CONF_USB_CDCD_ACM_IMANUFACT_STR_DESC
@@ -96,7 +96,7 @@
 // <e> Enable string descriptor of iProduct
 // <id> usb_cdcd_acm_iproduct_en
 #ifndef CONF_USB_CDCD_ACM_IPRODUCT_EN
-#define CONF_USB_CDCD_ACM_IPRODUCT_EN 0
+#define CONF_USB_CDCD_ACM_IPRODUCT_EN 1
 #endif
 
 #ifndef CONF_USB_CDCD_ACM_IPRODUCT
@@ -107,7 +107,7 @@
 // <s> Unicode string of iProduct
 // <id> usb_cdcd_acm_iproduct_str
 #ifndef CONF_USB_CDCD_ACM_IPRODUCT_STR
-#define CONF_USB_CDCD_ACM_IPRODUCT_STR "CDC ACM Serial Bridge Demo"
+#define CONF_USB_CDCD_ACM_IPRODUCT_STR "Electrical Engineering Binary Counter"
 #endif
 
 #ifndef CONF_USB_CDCD_ACM_IPRODUCT_STR_DESC

@@ -7392,7 +7392,7 @@ OUTPUT(SAMD Binary Counter.elf elf32-littlearm)
  .debug_line    0x0000c556      0xb75 usb/usb_protocol.o
  .debug_line    0x0000d0cb      0xd7c usb_start.o
 
-.debug_str      0x00000000    0x82e0f
+.debug_str      0x00000000    0x82e21
  .debug_str     0x00000000    0x730f0 atmel_start.o
                               0x73520 (size before relaxing)
  .debug_str     0x000730f0     0x10e7 Device_Startup/startup_samd21.o
@@ -7423,16 +7423,16 @@ OUTPUT(SAMD Binary Counter.elf elf32-littlearm)
                               0x7391b (size before relaxing)
  .debug_str     0x0007d455     0x179e hpl/usb/hpl_usb.o
                               0x78790 (size before relaxing)
- .debug_str     0x0007ebf3     0x31f4 main.o
-                              0x7a81a (size before relaxing)
- .debug_str     0x00081de7      0x77f usb/class/cdc/device/cdcdf_acm.o
-                              0x78a9e (size before relaxing)
- .debug_str     0x00082566      0x53f usb/device/usbdc.o
-                              0x78107 (size before relaxing)
- .debug_str     0x00082aa5       0xe4 usb/usb_protocol.o
+ .debug_str     0x0007ebf3     0x3206 main.o
+                              0x7a82c (size before relaxing)
+ .debug_str     0x00081df9      0x77f usb/class/cdc/device/cdcdf_acm.o
+                              0x78ab0 (size before relaxing)
+ .debug_str     0x00082578      0x53f usb/device/usbdc.o
+                              0x78119 (size before relaxing)
+ .debug_str     0x00082ab7       0xe4 usb/usb_protocol.o
                               0x766bb (size before relaxing)
- .debug_str     0x00082b89      0x286 usb_start.o
-                              0x79640 (size before relaxing)
+ .debug_str     0x00082b9b      0x286 usb_start.o
+                              0x79652 (size before relaxing)
 
 .debug_frame    0x00000000     0x1764
  .debug_frame   0x00000000       0x28 atmel_start.o
