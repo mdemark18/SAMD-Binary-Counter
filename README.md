@@ -1,5 +1,5 @@
 # SAMD Binary Counter
-PCB by:  Bryce Hill
+PCB by:  Bryce Hill</br>
 Code By: Miller DeMark
 ## Overview
 This repository contains the code for the SAMD Binary Counter created for Montana Tech's Electrical Engineering Department for student outreach. 
