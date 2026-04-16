@@ -4,7 +4,7 @@ Author:			Miller DeMark
 Description:	Built off of Ethan Schlepp's version, this completely finishes the Binary Counter Project
 				It has full UART, counts properly, debugs, and can be controlled over UART. 
 				
-Add Laters:		BAckwards counting, the one thing I somehow couldn't get.
+Add Laters:		Backwards counting, the one thing I somehow couldn't get.
 */
 
 #include "atmel_start.h"
@@ -23,9 +23,7 @@ uint8_t usb_cmd_index = 0;
 uint32_t count = 1023;		// Initial count
 uint32_t speed = 200;		// Counter speed (ms)
 bool counting = true;
-uint8_t buttonHold = 0;
-uint8_t clickTime = 0;
-bool clicked = false;
+bool buttonPressed = false;
 
 // DEBUG sequence variables
 extern bool debug_mode;
@@ -52,8 +50,6 @@ int main(void)
 {
 	atmel_start_init();
 	usb_serial_begin();
-
-	
 
 	bool didSplash = false; // USB splash screen flag
 
@@ -147,27 +143,13 @@ int main(void)
 		}
 
 		// Button control
-		if(!gpio_get_pin_level(PA16) && buttonHold < 255){
-			buttonHold++;
-			for (volatile uint32_t i = 0; i < 600000; i++);
-		}
-		else if(gpio_get_pin_level(PA16) && buttonHold != 0){
-			if(buttonHold < 20){
+		if (!gpio_get_pin_level(PA16)) {
+			if (!buttonPressed) {
+				buttonPressed = true;
 				counting ^= true;
-				if(clicked){
-					clickTime = 0;
-					count = 1023;
-					gpio_set_port_level(GPIO_PORTA, 1023, 1);
-				} else clicked = true;
-				} else {
-
-				counting = true;
 			}
-			buttonHold = 0;
-		}
-		else if (gpio_get_pin_level(PA16) && clicked){
-			clickTime++;
-			if(clickTime>5) clicked = false;
+		} else {
+			buttonPressed = false;
 		}
 
 		delay_ms(speed);
