@@ -24,6 +24,8 @@ This repository contains the code for the SAMD Binary Counter created for Montan
 - [Finishing Touches](/docs/finishingtouches.md)
     - [The LED Bar](/docs/finishingtouches.md#led-bar)
     - [USB and Button Solders](/docs/finishingtouches.md#usb-and-button-solders)
+- [Test Board](/SAMD_Test_Board/README.md)
+    - [Python Scripts](/SAMD_Test_Board)
 - [Notes](/docs/notes.md)
 
 ## Other Relevant Repositories
